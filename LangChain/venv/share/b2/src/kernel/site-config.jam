@@ -1,8 +1,0 @@
-    using clang : : x86_64-apple-darwin13.4.0-clang++
-              : # options
-                  <archiver>x86_64-apple-darwin13.4.0-ar
-                  <cflags>"-march=core2 -mtune=haswell -mssse3 -ftree-vectorize -fPIC -fPIE -fstack-protector-strong -O2 -pipe -isystem /Users/chandrika/Documents/LangChain/venv/include -fdebug-prefix-map=/var/folders/sy/f16zz6x50xz3113nwtb9bvq00000gp/T/abs_e56yg7ia72/croot/boost-split_1696761738713/work=/usr/local/src/conda/boost-split-1.82.0 -fdebug-prefix-map=/Users/chandrika/Documents/LangChain/venv=/usr/local/src/conda-prefix"
-                  <cxxflags>"-march=core2 -mtune=haswell -mssse3 -ftree-vectorize -fPIC -fPIE -fstack-protector-strong -O2 -pipe -stdlib=libc++ -fvisibility-inlines-hidden -fmessage-length=0 -isystem /Users/chandrika/Documents/LangChain/venv/include -fdebug-prefix-map=/var/folders/sy/f16zz6x50xz3113nwtb9bvq00000gp/T/abs_e56yg7ia72/croot/boost-split_1696761738713/work=/usr/local/src/conda/boost-split-1.82.0 -fdebug-prefix-map=/Users/chandrika/Documents/LangChain/venv=/usr/local/src/conda-prefix"
-                  <linkflags>"-Wl,-pie -Wl,-headerpad_max_install_names -Wl,-dead_strip_dylibs -Wl,-rpath,/Users/chandrika/Documents/LangChain/venv/lib -L/Users/chandrika/Documents/LangChain/venv/lib"
-                  <ranlib>x86_64-apple-darwin13.4.0-ranlib
-              ;
