@@ -1,0 +1,169 @@
+{
+  "build": "py312h46256e1_0",
+  "build_number": 0,
+  "channel": "https://repo.anaconda.com/pkgs/main/osx-64",
+  "constrains": [],
+  "depends": [
+    "python >=3.12,<3.13.0a0"
+  ],
+  "extracted_package_dir": "/opt/miniconda3/pkgs/regex-2024.11.6-py312h46256e1_0",
+  "files": [
+    "lib/python3.12/site-packages/regex-2024.11.6.dist-info/INSTALLER",
+    "lib/python3.12/site-packages/regex-2024.11.6.dist-info/LICENSE.txt",
+    "lib/python3.12/site-packages/regex-2024.11.6.dist-info/METADATA",
+    "lib/python3.12/site-packages/regex-2024.11.6.dist-info/RECORD",
+    "lib/python3.12/site-packages/regex-2024.11.6.dist-info/REQUESTED",
+    "lib/python3.12/site-packages/regex-2024.11.6.dist-info/WHEEL",
+    "lib/python3.12/site-packages/regex-2024.11.6.dist-info/direct_url.json",
+    "lib/python3.12/site-packages/regex-2024.11.6.dist-info/top_level.txt",
+    "lib/python3.12/site-packages/regex/__init__.py",
+    "lib/python3.12/site-packages/regex/__pycache__/__init__.cpython-312.pyc",
+    "lib/python3.12/site-packages/regex/__pycache__/_regex_core.cpython-312.pyc",
+    "lib/python3.12/site-packages/regex/__pycache__/regex.cpython-312.pyc",
+    "lib/python3.12/site-packages/regex/__pycache__/test_regex.cpython-312.pyc",
+    "lib/python3.12/site-packages/regex/_regex.cpython-312-darwin.so",
+    "lib/python3.12/site-packages/regex/_regex_core.py",
+    "lib/python3.12/site-packages/regex/regex.py",
+    "lib/python3.12/site-packages/regex/test_regex.py"
+  ],
+  "fn": "regex-2024.11.6-py312h46256e1_0.conda",
+  "license": "Apache-2.0",
+  "link": {
+    "source": "/opt/miniconda3/pkgs/regex-2024.11.6-py312h46256e1_0",
+    "type": 1
+  },
+  "md5": "eefe0eeabd8672cda49605dc39f557c9",
+  "name": "regex",
+  "package_tarball_full_path": "/opt/miniconda3/pkgs/regex-2024.11.6-py312h46256e1_0.conda",
+  "paths_data": {
+    "paths": [
+      {
+        "_path": "lib/python3.12/site-packages/regex-2024.11.6.dist-info/INSTALLER",
+        "path_type": "hardlink",
+        "sha256": "d0edee15f91b406f3f99726e44eb990be6e34fd0345b52b910c568e0eef6a2a8",
+        "sha256_in_prefix": "d0edee15f91b406f3f99726e44eb990be6e34fd0345b52b910c568e0eef6a2a8",
+        "size_in_bytes": 5
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex-2024.11.6.dist-info/LICENSE.txt",
+        "path_type": "hardlink",
+        "sha256": "bff55ef4cdcc8c14ce259f8e8ab60e264418440d6335f4dc138273fbd506144d",
+        "sha256_in_prefix": "bff55ef4cdcc8c14ce259f8e8ab60e264418440d6335f4dc138273fbd506144d",
+        "size_in_bytes": 11584
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex-2024.11.6.dist-info/METADATA",
+        "path_type": "hardlink",
+        "sha256": "834d4e6889c9292660684fac77a4b805ac1cfb14b67e0d321d16eb535397ce98",
+        "sha256_in_prefix": "834d4e6889c9292660684fac77a4b805ac1cfb14b67e0d321d16eb535397ce98",
+        "size_in_bytes": 40487
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex-2024.11.6.dist-info/RECORD",
+        "path_type": "hardlink",
+        "sha256": "4e420aeeeec2885dac55f73881c625b1ebc9a57b081c297fd9d8ec771d4b456a",
+        "sha256_in_prefix": "4e420aeeeec2885dac55f73881c625b1ebc9a57b081c297fd9d8ec771d4b456a",
+        "size_in_bytes": 1270
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex-2024.11.6.dist-info/REQUESTED",
+        "path_type": "hardlink",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256_in_prefix": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size_in_bytes": 0
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex-2024.11.6.dist-info/WHEEL",
+        "path_type": "hardlink",
+        "sha256": "c348296fd93ecdd1cc55b7876cce03da32dcc53503b530cf87cecfa292f66686",
+        "sha256_in_prefix": "c348296fd93ecdd1cc55b7876cce03da32dcc53503b530cf87cecfa292f66686",
+        "size_in_bytes": 111
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex-2024.11.6.dist-info/direct_url.json",
+        "path_type": "hardlink",
+        "sha256": "41888b0dbc3b5492b7a5e3ec80596b5a43d0ee48407c83efb72200504d4e62d0",
+        "sha256_in_prefix": "41888b0dbc3b5492b7a5e3ec80596b5a43d0ee48407c83efb72200504d4e62d0",
+        "size_in_bytes": 136
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex-2024.11.6.dist-info/top_level.txt",
+        "path_type": "hardlink",
+        "sha256": "6909a20cc84d4c5dba7022b8ffb0fea9a56f85bc42946d30c824e7121933601b",
+        "sha256_in_prefix": "6909a20cc84d4c5dba7022b8ffb0fea9a56f85bc42946d30c824e7121933601b",
+        "size_in_bytes": 6
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex/__init__.py",
+        "path_type": "hardlink",
+        "sha256": "f6c94d4046f848267d2e770dcdc42faa6932c5795c38017b4300308a0c568ecc",
+        "sha256_in_prefix": "f6c94d4046f848267d2e770dcdc42faa6932c5795c38017b4300308a0c568ecc",
+        "size_in_bytes": 65
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex/__pycache__/__init__.cpython-312.pyc",
+        "path_type": "hardlink",
+        "sha256": "a395f81aeb110cb84f703da1203d0d100629144733353e914133de2ac2bb5138",
+        "sha256_in_prefix": "a395f81aeb110cb84f703da1203d0d100629144733353e914133de2ac2bb5138",
+        "size_in_bytes": 236
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex/__pycache__/_regex_core.cpython-312.pyc",
+        "path_type": "hardlink",
+        "sha256": "9bd370bb08903cc6686db8b464072efb317eb10491eafab13a47707940d8ac02",
+        "sha256_in_prefix": "9bd370bb08903cc6686db8b464072efb317eb10491eafab13a47707940d8ac02",
+        "size_in_bytes": 196381
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex/__pycache__/regex.cpython-312.pyc",
+        "path_type": "hardlink",
+        "sha256": "60d2b616eef5f3abe0cb6a43365f9b2174dd8e86cf79d9ebfdf55a0da1c4af93",
+        "sha256_in_prefix": "60d2b616eef5f3abe0cb6a43365f9b2174dd8e86cf79d9ebfdf55a0da1c4af93",
+        "size_in_bytes": 32591
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex/__pycache__/test_regex.cpython-312.pyc",
+        "path_type": "hardlink",
+        "sha256": "083c3821a6392f1d8f447b46215e9fde277157398ea376793cb765fa9df6c572",
+        "sha256_in_prefix": "083c3821a6392f1d8f447b46215e9fde277157398ea376793cb765fa9df6c572",
+        "size_in_bytes": 327721
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex/_regex.cpython-312-darwin.so",
+        "path_type": "hardlink",
+        "sha256": "bc201fb9c6a67e979f56a311c36253e75fe0aac887af49afbe9526af750c2b11",
+        "sha256_in_prefix": "bc201fb9c6a67e979f56a311c36253e75fe0aac887af49afbe9526af750c2b11",
+        "size_in_bytes": 749068
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex/_regex_core.py",
+        "path_type": "hardlink",
+        "sha256": "308f27cc4ee00445130c3adaa3c68e1e0eff421843cc4d3b56828597f592c423",
+        "sha256_in_prefix": "308f27cc4ee00445130c3adaa3c68e1e0eff421843cc4d3b56828597f592c423",
+        "size_in_bytes": 141028
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex/regex.py",
+        "path_type": "hardlink",
+        "sha256": "833c523cf7a0bc6535dc797ae0be5abe215ec6b91756fbb7f741531b9684116b",
+        "sha256_in_prefix": "833c523cf7a0bc6535dc797ae0be5abe215ec6b91756fbb7f741531b9684116b",
+        "size_in_bytes": 32683
+      },
+      {
+        "_path": "lib/python3.12/site-packages/regex/test_regex.py",
+        "path_type": "hardlink",
+        "sha256": "c7f15f187a5dee14f404543f8c27ad771bfb1b177388164782c4fc5f41554ce3",
+        "sha256_in_prefix": "c7f15f187a5dee14f404543f8c27ad771bfb1b177388164782c4fc5f41554ce3",
+        "size_in_bytes": 222040
+      }
+    ],
+    "paths_version": 1
+  },
+  "requested_spec": "None",
+  "sha256": "65363c37b5c1345aef74b9065b9b36029a14b5b896d4343fce6817143ed63fe9",
+  "size": 406125,
+  "subdir": "osx-64",
+  "timestamp": 1736542857000,
+  "url": "https://repo.anaconda.com/pkgs/main/osx-64/regex-2024.11.6-py312h46256e1_0.conda",
+  "version": "2024.11.6"
+}

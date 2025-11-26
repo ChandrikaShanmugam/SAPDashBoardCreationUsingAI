@@ -1,0 +1,134 @@
+{
+  "build": "h46256e1_0",
+  "build_number": 0,
+  "channel": "https://repo.anaconda.com/pkgs/main/osx-64",
+  "constrains": [],
+  "depends": [
+    "aws-c-common >=0.12.3,<0.12.4.0a0",
+    "aws-c-cal >=0.9.2,<0.9.3.0a0",
+    "aws-c-io >=0.20.1,<0.20.2.0a0",
+    "aws-c-http >=0.10.2,<0.10.3.0a0",
+    "aws-checksums >=0.2.7,<0.2.8.0a0",
+    "aws-c-auth >=0.9.0,<0.9.1.0a0"
+  ],
+  "extracted_package_dir": "/opt/miniconda3/pkgs/aws-c-s3-0.8.3-h46256e1_0",
+  "files": [
+    "include/aws/s3/exports.h",
+    "include/aws/s3/s3.h",
+    "include/aws/s3/s3_buffer_pool.h",
+    "include/aws/s3/s3_client.h",
+    "include/aws/s3/s3_endpoint_resolver.h",
+    "include/aws/s3/s3express_credentials_provider.h",
+    "lib/cmake/aws-c-s3/aws-c-s3-config.cmake",
+    "lib/cmake/aws-c-s3/shared/aws-c-s3-targets-release.cmake",
+    "lib/cmake/aws-c-s3/shared/aws-c-s3-targets.cmake",
+    "lib/libaws-c-s3.0unstable.dylib",
+    "lib/libaws-c-s3.1.0.0.dylib",
+    "lib/libaws-c-s3.dylib"
+  ],
+  "fn": "aws-c-s3-0.8.3-h46256e1_0.conda",
+  "license": "Apache-2.0",
+  "link": {
+    "source": "/opt/miniconda3/pkgs/aws-c-s3-0.8.3-h46256e1_0",
+    "type": 1
+  },
+  "md5": "535872e63a77c2f910c62bbabf4f1cf3",
+  "name": "aws-c-s3",
+  "package_tarball_full_path": "/opt/miniconda3/pkgs/aws-c-s3-0.8.3-h46256e1_0.conda",
+  "paths_data": {
+    "paths": [
+      {
+        "_path": "include/aws/s3/exports.h",
+        "path_type": "hardlink",
+        "sha256": "6db9f52ef6a887d8ff1d436e65e2702f2b8041f43adb531faa82701d426e3c9f",
+        "sha256_in_prefix": "6db9f52ef6a887d8ff1d436e65e2702f2b8041f43adb531faa82701d426e3c9f",
+        "size_in_bytes": 826
+      },
+      {
+        "_path": "include/aws/s3/s3.h",
+        "path_type": "hardlink",
+        "sha256": "09574004e8cd43a92d13abe85d8ba398897fb1fb6e1b6e3e37d9abf661193869",
+        "sha256_in_prefix": "09574004e8cd43a92d13abe85d8ba398897fb1fb6e1b6e3e37d9abf661193869",
+        "size_in_bytes": 3981
+      },
+      {
+        "_path": "include/aws/s3/s3_buffer_pool.h",
+        "path_type": "hardlink",
+        "sha256": "51725badd110d91e15893e15489937ec5c3dfe65e742b5689d4a4bd7b223458d",
+        "sha256_in_prefix": "51725badd110d91e15893e15489937ec5c3dfe65e742b5689d4a4bd7b223458d",
+        "size_in_bytes": 6434
+      },
+      {
+        "_path": "include/aws/s3/s3_client.h",
+        "path_type": "hardlink",
+        "sha256": "c5158de2a20eea9bdb3d45f6ec2dd083e5684d6ca280aa7610a0d33a9946bdd9",
+        "sha256_in_prefix": "c5158de2a20eea9bdb3d45f6ec2dd083e5684d6ca280aa7610a0d33a9946bdd9",
+        "size_in_bytes": 61948
+      },
+      {
+        "_path": "include/aws/s3/s3_endpoint_resolver.h",
+        "path_type": "hardlink",
+        "sha256": "1ce131444f92c70a3e96bdb430a7e027f6e09962726754c007fa00f52d86291f",
+        "sha256_in_prefix": "1ce131444f92c70a3e96bdb430a7e027f6e09962726754c007fa00f52d86291f",
+        "size_in_bytes": 696
+      },
+      {
+        "_path": "include/aws/s3/s3express_credentials_provider.h",
+        "path_type": "hardlink",
+        "sha256": "f799537bd3a21f2fae938477f881a34a7a64c3593dee53bf074a2fc50e98fc34",
+        "sha256_in_prefix": "f799537bd3a21f2fae938477f881a34a7a64c3593dee53bf074a2fc50e98fc34",
+        "size_in_bytes": 3276
+      },
+      {
+        "_path": "lib/cmake/aws-c-s3/aws-c-s3-config.cmake",
+        "path_type": "hardlink",
+        "sha256": "c82e60fb7294608cfdb379a5f1737122871583c6ed9f9d00ae81411175e4ca13",
+        "sha256_in_prefix": "c82e60fb7294608cfdb379a5f1737122871583c6ed9f9d00ae81411175e4ca13",
+        "size_in_bytes": 624
+      },
+      {
+        "_path": "lib/cmake/aws-c-s3/shared/aws-c-s3-targets-release.cmake",
+        "path_type": "hardlink",
+        "sha256": "074905145c45fdc879f321bfc068fdfd6fc7025f571d1c3cde52b8aabca3907b",
+        "sha256_in_prefix": "074905145c45fdc879f321bfc068fdfd6fc7025f571d1c3cde52b8aabca3907b",
+        "size_in_bytes": 875
+      },
+      {
+        "_path": "lib/cmake/aws-c-s3/shared/aws-c-s3-targets.cmake",
+        "path_type": "hardlink",
+        "sha256": "0f45f2d4cb00b9c06945c5b8c5e6c63a983cbce716c1955187f5983dfa824a92",
+        "sha256_in_prefix": "0f45f2d4cb00b9c06945c5b8c5e6c63a983cbce716c1955187f5983dfa824a92",
+        "size_in_bytes": 4306
+      },
+      {
+        "_path": "lib/libaws-c-s3.0unstable.dylib",
+        "path_type": "softlink",
+        "sha256": "afa5487577ee129a28c08630453ccfa9283b958af03f2bf8bfe97de988ef2704",
+        "size_in_bytes": 232840
+      },
+      {
+        "_path": "lib/libaws-c-s3.1.0.0.dylib",
+        "file_mode": "binary",
+        "path_type": "hardlink",
+        "prefix_placeholder": "/var/folders/c_/qfmhj66j0tn016nkx_th4hxm0000gp/T/abs_16kmiq30oz/croot/aws-c-s3_1751617768007/_h_env_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_place",
+        "sha256": "afa5487577ee129a28c08630453ccfa9283b958af03f2bf8bfe97de988ef2704",
+        "sha256_in_prefix": "3272f0b90f90c6632a94a8b9725a7486887b9b565628226c076b3f41db6dd862",
+        "size_in_bytes": 232840
+      },
+      {
+        "_path": "lib/libaws-c-s3.dylib",
+        "path_type": "softlink",
+        "sha256": "afa5487577ee129a28c08630453ccfa9283b958af03f2bf8bfe97de988ef2704",
+        "size_in_bytes": 232840
+      }
+    ],
+    "paths_version": 1
+  },
+  "requested_spec": "None",
+  "sha256": "320b142f532f2940619bbc790d4d0cc89523e811628e0c70b3e9579606846773",
+  "size": 116604,
+  "subdir": "osx-64",
+  "timestamp": 1751617837000,
+  "url": "https://repo.anaconda.com/pkgs/main/osx-64/aws-c-s3-0.8.3-h46256e1_0.conda",
+  "version": "0.8.3"
+}

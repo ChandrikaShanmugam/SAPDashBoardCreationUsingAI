@@ -1,0 +1,74 @@
+{
+  "build": "h6d0c2b6_0",
+  "build_number": 0,
+  "channel": "https://repo.anaconda.com/pkgs/main/osx-64",
+  "constrains": [],
+  "depends": [
+    "libcxx >=14.0.6"
+  ],
+  "extracted_package_dir": "/opt/miniconda3/pkgs/lerc-4.0.0-h6d0c2b6_0",
+  "files": [
+    "include/Lerc_c_api.h",
+    "include/Lerc_types.h",
+    "lib/libLerc.4.dylib",
+    "lib/libLerc.dylib",
+    "lib/pkgconfig/Lerc.pc"
+  ],
+  "fn": "lerc-4.0.0-h6d0c2b6_0.conda",
+  "license": "Apache-2.0",
+  "link": {
+    "source": "/opt/miniconda3/pkgs/lerc-4.0.0-h6d0c2b6_0",
+    "type": 1
+  },
+  "md5": "824f87854c58df1525557c8639ce7f93",
+  "name": "lerc",
+  "package_tarball_full_path": "/opt/miniconda3/pkgs/lerc-4.0.0-h6d0c2b6_0.conda",
+  "paths_data": {
+    "paths": [
+      {
+        "_path": "include/Lerc_c_api.h",
+        "path_type": "hardlink",
+        "sha256": "51c3d4c683eac91beb16e521a7ae38516ac06b867dc12e5555961cb7d1975e65",
+        "sha256_in_prefix": "51c3d4c683eac91beb16e521a7ae38516ac06b867dc12e5555961cb7d1975e65",
+        "size_in_bytes": 22507
+      },
+      {
+        "_path": "include/Lerc_types.h",
+        "path_type": "hardlink",
+        "sha256": "4887c98b138f7cebaa4f26699e9a8647d612058892b261c37395728b3695b038",
+        "sha256_in_prefix": "4887c98b138f7cebaa4f26699e9a8647d612058892b261c37395728b3695b038",
+        "size_in_bytes": 1285
+      },
+      {
+        "_path": "lib/libLerc.4.dylib",
+        "path_type": "hardlink",
+        "sha256": "92a871d9ba0ade602ba4c7112755bdd0d27cd6149b4c69fd70ce88257fd571d1",
+        "sha256_in_prefix": "92a871d9ba0ade602ba4c7112755bdd0d27cd6149b4c69fd70ce88257fd571d1",
+        "size_in_bytes": 840952
+      },
+      {
+        "_path": "lib/libLerc.dylib",
+        "path_type": "softlink",
+        "sha256": "92a871d9ba0ade602ba4c7112755bdd0d27cd6149b4c69fd70ce88257fd571d1",
+        "size_in_bytes": 840952
+      },
+      {
+        "_path": "lib/pkgconfig/Lerc.pc",
+        "file_mode": "text",
+        "path_type": "hardlink",
+        "prefix_placeholder": "/var/folders/sy/f16zz6x50xz3113nwtb9bvq00000gp/T/abs_32ji9x_v7g/croot/lerc_1734423356165/_h_env_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold",
+        "sha256": "94fd1126e6ca783fb40238e54af4c7c72771de1aedcb4d98ac3bfff56e7cf861",
+        "sha256_in_prefix": "c2db4c73580fc1ec99f70b174494cfb54efa82555fd2e157bf171e9ae87bf4c3",
+        "size_in_bytes": 526
+      }
+    ],
+    "paths_version": 1
+  },
+  "requested_spec": "None",
+  "sha256": "3df8b4e7e349e21981d9ffcad1e3789125f4767bdf55256c28b30c6a5ee6fb0e",
+  "size": 278832,
+  "subdir": "osx-64",
+  "timestamp": 1734423413000,
+  "url": "https://repo.anaconda.com/pkgs/main/osx-64/lerc-4.0.0-h6d0c2b6_0.conda",
+  "version": "4.0.0"
+}

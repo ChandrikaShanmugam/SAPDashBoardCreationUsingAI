@@ -1,0 +1,10 @@
+prefix=/Users/chandrika/Documents/LangChain/venv
+exec_prefix=/Users/chandrika/Documents/LangChain/venv
+libdir=/Users/chandrika/Documents/LangChain/venv/lib
+includedir=/Users/chandrika/Documents/LangChain/venv/include
+
+Name: Protocol Buffers
+Description: Google's Data Interchange Format
+Version: 29.3.0
+Libs: -L${libdir} -lupb 
+Cflags: -I${includedir}
