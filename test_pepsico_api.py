@@ -25,7 +25,9 @@ print("-" * 60)
 response = invoke_llm(test_payload, timeout=30)
 
 print("Response:")
+print('\n' + '-'*10 + ' Response ' + '-'*10)
 print(json.dumps(response, indent=2))
+print('\n')
 
 if 'error' in response:
     print("\n❌ API call failed!")
@@ -35,4 +37,6 @@ elif 'text' in response:
     print(f"Text: {response['text']}")
 else:
     print("\n✓ API responded with JSON:")
+    print('-'*10 + ' Response ' + '-'*10)
     print(json.dumps(response, indent=2))
+    print('\n')

@@ -415,8 +415,9 @@ Example:
             
             elapsed = time.time() - start_time
             logger.info(f"✓ LLM Response received in {elapsed:.2f} seconds")
-            logger.info(f"Extracted Filters:")
-            logger.info(json.dumps(result.get('filters', {}), indent=2))
+            logger.info("\n" + "=" * 30 + " Extracted Filters " + "=" * 30)
+            logger.info("%s", json.dumps(result.get('filters', {}), indent=2))
+            logger.info("" + "=" * 80 + "\n")
             logger.info("=" * 80)
             
             return result
@@ -443,7 +444,9 @@ Example:
                 fallback_filters['Auth Sell Flag Description'] = 'No'
             
             fallback_result = {'filters': fallback_filters}
-            logger.info(f"Fallback filters: {json.dumps(fallback_filters, indent=2)}")
+            logger.info("\n" + "-" * 20 + " Fallback Filters " + "-" * 20)
+            logger.info("%s", json.dumps(fallback_filters, indent=2))
+            logger.info("" + "-" * 60 + "\n")
             logger.info("=" * 80)
             return fallback_result
     
@@ -510,8 +513,9 @@ Example:
             
             elapsed = time.time() - start_time
             logger.info(f"✓ Chart config generated in {elapsed:.2f} seconds")
-            logger.info(f"Chart Configuration:")
-            logger.info(json.dumps(result, indent=2))
+            logger.info("\n" + "=" * 30 + " Chart Configuration " + "=" * 30)
+            logger.info("%s", json.dumps(result, indent=2))
+            logger.info("" + "=" * 80 + "\n")
             
             # Validate that charts have valid column names
             if result and 'charts' in result:
@@ -725,6 +729,9 @@ class DashboardGenerator:
         if filters:
             filter_text = ", ".join([f"{k}={v}" for k, v in filters.items()])
             st.info(f"**Filters Applied:** {filter_text}")
+            # Also show pretty JSON for clarity
+            with st.expander("🧾 Filters (pretty)", expanded=False):
+                st.code(json.dumps(filters, indent=2), language="json")
         else:
             st.info("**Showing all data (no filters applied)**")
         
@@ -1251,6 +1258,14 @@ def main():
         height=100
     )
     
+    # Generate button to trigger processing (aligned to right)
+    col1, col2 = st.sidebar.columns([3, 3])
+    with col1:
+        st.write("")  # Empty space
+    with col2:
+        run_button = st.button("Generate", use_container_width=True)
+    st.sidebar.caption("Enter a query then click 'Generate' (click an example to populate the query)")
+    
     # Example queries
     st.sidebar.markdown("### 💡 Example Queries:")
     example_queries = [
@@ -1277,12 +1292,36 @@ def main():
             st.cache_data.clear()
             st.rerun()
     
+    # Manage run state to avoid re-running on every rerender
+    if 'last_run_query' not in st.session_state:
+        st.session_state['last_run_query'] = None
+
+    should_run = False
+    if user_query and run_button:
+        # run if user clicked Generate
+        if st.session_state['last_run_query'] != user_query:
+            should_run = True
+            st.session_state['last_run_query'] = user_query
+
     # Process Query
-    if user_query:
-        query_start = time.time()
+    if should_run:
+        # Show animated loading indicator with custom GIF (centered)
+        loader_col1, loader_col2, loader_col3 = st.columns([2, 1, 2])
+        with loader_col2:
+            loader_placeholder = st.empty()
+            loader_placeholder.markdown(
+                """<div style="display: flex; justify-content: center;">
+                <img src="data:image/gif;base64,{}" width="500">
+                </div>""".format(
+                    __import__('base64').b64encode(open("loader.gif", "rb").read()).decode()
+                ),
+                unsafe_allow_html=True
+            )
         
-        # STAGE 1: Extract Filters
-        with st.spinner("🔍 Stage 1: Extracting filters from query..."):
+        try:
+            query_start = time.time()
+            
+            # STAGE 1: Extract Filters
             filter_result = classifier.classify(user_query)
             classification_time = time.time() - query_start
             st.session_state.performance_metrics['filter_extraction_time'] = classification_time
@@ -1295,8 +1334,24 @@ def main():
                 'response': filter_result,
                 'duration': f"{classification_time:.2f}s"
             })
+            
+            # STAGE 2: Generate Dashboard with Charts
+            dashboard_start = time.time()
+            dashboard_gen.generate(filter_result, user_query)
+            dashboard_time = time.time() - dashboard_start
+            st.session_state.performance_metrics['dashboard_generation_time'] = dashboard_time
+            
+            total_time = time.time() - query_start
+            st.session_state.performance_metrics['total_time'] = total_time
+            
+            # Clear loader
+            loader_placeholder.empty()
         
-        # Show filter extraction results
+        except Exception as e:
+            loader_placeholder.empty()
+            raise
+        
+        # Show filter extraction results after generation
         with st.expander("🔍 Stage 1: Filter Extraction Results"):
             col1, col2 = st.columns(2)
             with col1:
@@ -1306,19 +1361,14 @@ def main():
                 st.markdown("**Extracted Filters:**")
                 st.json(filter_result.get('filters', {}))
         
-        # STAGE 2: Generate Dashboard with Charts
-        dashboard_start = time.time()
-        with st.spinner("📊 Stage 2: Filtering data and generating charts..."):
-            dashboard_gen.generate(filter_result, user_query)
-            dashboard_time = time.time() - dashboard_start
-            st.session_state.performance_metrics['dashboard_generation_time'] = dashboard_time
-        
-        total_time = time.time() - query_start
-        st.session_state.performance_metrics['total_time'] = total_time
+        st.success(f"✅ Dashboard generated in {total_time:.2f}s")
         
     else:
-        # Default: show all data
-        dashboard_gen.generate({"filters": {}}, "Show all data")
+        # Do not auto-generate. Prompt user to click Generate.
+        if user_query and not run_button:
+            st.info("Type your query and click 'Generate' to build the dashboard.")
+        else:
+            st.info("No query submitted. Enter a query on the left and click 'Generate' to start.")
     
     # Developer Console (if enabled)
     if dev_mode:

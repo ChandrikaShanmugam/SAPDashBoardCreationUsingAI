@@ -290,7 +290,9 @@ if __name__ == '__main__':
         print(f"CSV not found. Please place '{DEFAULT_CSV}' in the working directory.")
         raise
 
+    print('\n' + '='*10 + ' Columns Info ' + '='*10)
     print(get_columns_info(df))
+    print('\n')
 
     sample = {
         'shape': df.shape,
@@ -300,10 +302,14 @@ if __name__ == '__main__':
 
     user_q = input("Enter a test query (e.g. Plant 1007): ")
     filters = extract_filters_from_llm(user_q, get_columns_info(df))
-    print("Extracted filters:", filters)
+    print('-'*10 + ' Extracted Filters ' + '-'*10)
+    print(json.dumps(filters, indent=2))
+    print('\n')
 
     filtered = apply_filters(df, filters)
     print(f"Filtered rows: {len(filtered):,}")
 
     chart_suggestions = suggest_charts_from_llm(user_q, sample, get_columns_info(df))
+    print('-'*10 + ' Chart Suggestions ' + '-'*10)
     print(json.dumps(chart_suggestions, indent=2))
+    print('\n')

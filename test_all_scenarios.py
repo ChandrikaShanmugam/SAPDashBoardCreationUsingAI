@@ -201,7 +201,9 @@ def test_scenario(scenario):
     print(f"{'='*80}")
     print(f"Query: {scenario['query']}")
     print(f"\nExpected:")
+    print('\n' + '-'*10 + ' Expected ' + '-'*10)
     print(json.dumps(scenario['expected'], indent=2))
+    print('\n')
     
     # Build prompt
     schema_info = db_schema.generate_schema_prompt()
@@ -241,7 +243,9 @@ def test_scenario(scenario):
             
             result = json.loads(response_text)
             print(f"\nActual LLM Response:")
+            print('-'*10 + ' Result ' + '-'*10)
             print(json.dumps(result, indent=2))
+            print('\n')
             
             # Check filters
             expected_filters = scenario['expected'].get('filters', {})
