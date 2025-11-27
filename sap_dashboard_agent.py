@@ -18,6 +18,9 @@ import logging
 import time
 from datetime import datetime
 import sys
+import os
+from pathlib import Path
+import base64
 from exception_handler import (
     load_exception_csv,
     get_columns_info,
@@ -1309,14 +1312,19 @@ def main():
         loader_col1, loader_col2, loader_col3 = st.columns([2, 1, 2])
         with loader_col2:
             loader_placeholder = st.empty()
-            loader_placeholder.markdown(
-                """<div style="display: flex; justify-content: center;">
-                <img src="data:image/gif;base64,{}" width="500">
-                </div>""".format(
-                    __import__('base64').b64encode(open("loader.gif", "rb").read()).decode()
-                ),
-                unsafe_allow_html=True
-            )
+            # Get absolute path to loader.gif
+            loader_path = Path(__file__).parent / "loader.gif"
+            if loader_path.exists():
+                with open(loader_path, "rb") as f:
+                    loader_data = base64.b64encode(f.read()).decode()
+                loader_placeholder.markdown(
+                    f"""<div style="display: flex; justify-content: center;">
+                    <img src="data:image/gif;base64,{loader_data}" width="100">
+                    </div>""",
+                    unsafe_allow_html=True
+                )
+            else:
+                loader_placeholder.info("⏳ Loading...")
         
         try:
             query_start = time.time()
