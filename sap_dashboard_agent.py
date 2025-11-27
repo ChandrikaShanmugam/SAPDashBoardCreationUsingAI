@@ -12,6 +12,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from typing import Dict, List
 from pepsico_llm import invoke_llm
+import database_schema as db_schema
 import json
 import logging
 import time
@@ -123,106 +124,158 @@ class IntentClassifier:
         self.columns_info = self._get_columns_info()
         
         # Define system prompts as strings for API calls
-        self.intent_system_prompt = """You are a SAP data analyst. Classify the user's query and determine what dashboard to create.
+        # STAGE 1: FILTER EXTRACTION + AGGREGATION DETECTION
+        self.intent_system_prompt = """You are a SAP data analyst. Extract filters and aggregation requests from the user's query using EXACT column names.
             
-Available Data Sources and Their Columns:
 {columns_info}
 
-🔑 CRITICAL BUSINESS TERMINOLOGY MAPPING:
+**TERMINOLOGY MAPPINGS** (User Language → Column Names):
+- "location" / "plant" / "facility" → "Plant"
+- "customer account" / "customer" / "sold-to" / "sold to party" → "Sold-To Party"
+- "material description" / "material desc" → "Material Descrption" (note: typo in data)
+- "case qty" / "quantity" / "order quantity" / "qty" → "Order Quantity Sales Unit"
+- "sales order" / "order" / "SO" → "Sales Order Number"
+- "active material" / "material active" → Material Status Description = "Material Active"
+- "inactive material" / "material inactive" / "material is not active" → Material Status Description = "Material is not active"
 
-**Understanding "Failed" / "Error" / "Issue":**
-- "failed due to Authorized to Sell" = Auth Sell Flag Description = "No"
-- "Authorized to Sell issue" = Auth Sell Flag Description = "No"
-- "Authorized to Sell error" = Auth Sell Flag Description = "No"
-- "auth to sell problem" = Auth Sell Flag Description = "No"
-- "not authorized" = Auth Sell Flag Description = "No"
-- ALL records in this dataset are exceptions/failures, filter by Auth Sell Flag = "No" to find authorization-related failures
+**FAILURE/ERROR TERMINOLOGY**:
+- "failure" / "failed" / "error" / "issue" / "exception" → Usually means Auth Sell Flag Description = "No"
+- "failed due to Authorized to Sell" → Auth Sell Flag Description = "No"
+- "Authorized to Sell issue/error" → Auth Sell Flag Description = "No"
+- "authorised to sell not active" → Auth Sell Flag Description = "No"
+- "auth to sell problem" → Auth Sell Flag Description = "No"
 
-**Column Name Mappings:**
-- "sales order" = column "Sales Order Number"
-- "location" / "plant" = column "Plant"
-- "customer" / "customer account" / "sold-to" = column "Sold-To Party"
-- "material description" = column "Material Descrption" (note: spelling in data)
-- "material" / "material code" = column "Material"
-- "quantity" / "case qty" / "order quantity" = column "Order Quantity Sales Unit"
-- "status" / "material status" = column "Material Status Description"
-- "auth flag" / "authorization" = column "Auth Sell Flag Description"
+**SUCCESS/AUTHORIZED TERMINOLOGY**:
+- "auth flag active" / "authorized" / "authorised" → Auth Sell Flag Description = "Yes"
+- "auth flag Yes" → Auth Sell Flag Description = "Yes"
+- "authorization active" → Auth Sell Flag Description = "Yes"
 
-**Counting Logic:**
-- "how many sales orders" = count_unique on "Sales Order Number"
-- "how many materials" = count_unique on "Material" or "Material Descrption"
-- "total records" = count on any column (returns row count)
-- "total quantity" = sum on "Order Quantity Sales Unit"
+**AGGREGATION DETECTION** (When user asks "How many", "Total number", "Count", "with qty"):
+If query asks for counts/totals, include "aggregations" array:
+- "How many materials" → count_unique on "Material"
+- "How many sales orders" → count_unique on "Sales Order Number"
+- "Total number of records" → count on any column (or omit column for row count)
+- "Total quantity" / "sum of qty" → sum on "Order Quantity Sales Unit"
+- "How many material description" → count_unique on "Material Descrption"
+- "with case qty" / "with qty" / "with quantity" → ALWAYS add sum on "Order Quantity Sales Unit"
+- If query mentions BOTH "how many [something]" AND "with case qty/quantity", return TWO aggregations:
+  1. count_unique on the thing being counted
+  2. sum on "Order Quantity Sales Unit"
 
 Return JSON with:
-- intent: "exceptions", "plant_analysis", "material_analysis", "customer_analysis", or "overview"
-- data_sources: list of required data sources (currently only ["exception_report"] is available)
-- filters: object with EXACT column names as keys and filter values. Examples:
-  * {{"Plant": "7001"}} - for specific plant/location
-  * {{"Material": "000000000300005846"}} - for specific material
-  * {{"Material Status Description": "Active"}} - for material status
-  * {{"Auth Sell Flag Description": "No"}} - for authorization failures
-  * {{"Auth Sell Flag Description": "Yes"}} - for authorized items
-  * {{"Sold-To Party": "0001234567"}} - for customer account
-- show_material_details: true/false - whether to show detailed material information
-- aggregations: list of aggregation requests. Examples:
-  * {{"column": "Sales Order Number", "function": "count_unique", "label": "Total Sales Orders"}}
-  * {{"column": "Order Quantity Sales Unit", "function": "sum", "label": "Total Case Qty"}}
-  * {{"column": "Material Descrption", "function": "count_unique", "label": "Unique Materials"}}
+- filters: object with EXACT column names as keys and filter values
+- aggregations: array of aggregation requests (ONLY if user asks "how many", "total", "count", "sum")
+
+Each aggregation object has:
+- column: EXACT column name (or null for total record count)
+- function: "count", "count_unique", "sum", "mean", "max", "min"
+- label: human-readable label for the metric
 
 Example queries with EXACT expected output:
 
-1. "Provide total number of sales orders failed due to Authorized to Sell issue"
-   → {{"intent": "exceptions", "filters": {{"Auth Sell Flag Description": "No"}}, "aggregations": [{{"column": "Sales Order Number", "function": "count_unique", "label": "Failed Sales Orders"}}]}}
+1. "I want plant 1007 details for auth flag active"
+   → {{"filters": {{"Plant": "1007", "Auth Sell Flag Description": "Yes"}}}}
 
-2. "Provide total records due to Authorized to sell error"
-   → {{"intent": "exceptions", "filters": {{"Auth Sell Flag Description": "No"}}, "aggregations": [{{"column": "Sales Order Number", "function": "count", "label": "Total Records"}}]}}
+2. "How many failure material description for location 1007 with case qty"
+   → {{
+     "filters": {{"Plant": "1007", "Auth Sell Flag Description": "No"}},
+     "aggregations": [
+       {{"column": "Material Descrption", "function": "count_unique", "label": "Unique Materials"}},
+       {{"column": "Order Quantity Sales Unit", "function": "sum", "label": "Total Case Qty"}}
+     ]
+   }}
 
-3. "How many failure material description for plant 1007 with case qty"
-   → {{"intent": "plant_analysis", "filters": {{"Plant": "1007"}}, "aggregations": [{{"column": "Material Descrption", "function": "count_unique", "label": "Unique Materials"}}, {{"column": "Order Quantity Sales Unit", "function": "sum", "label": "Total Case Qty"}}]}}
+3. "How many failure material description for customer account 0001234567 with case qty"
+   → {{
+     "filters": {{"Sold-To Party": "0001234567", "Auth Sell Flag Description": "No"}},
+     "aggregations": [
+       {{"column": "Material Descrption", "function": "count_unique", "label": "Unique Materials"}},
+       {{"column": "Order Quantity Sales Unit", "function": "sum", "label": "Total Case Qty"}}
+     ]
+   }}
 
-4. "How many failure materials for customer 0001234567 with case qty"
-   → {{"intent": "customer_analysis", "filters": {{"Sold-To Party": "0001234567"}}, "aggregations": [{{"column": "Material", "function": "count_unique", "label": "Unique Materials"}}, {{"column": "Order Quantity Sales Unit", "function": "sum", "label": "Total Case Qty"}}]}}
+4. "Total number of sales order failed due to Authorized to Sell issue"
+   → {{
+     "filters": {{"Auth Sell Flag Description": "No"}},
+     "aggregations": [
+       {{"column": "Sales Order Number", "function": "count_unique", "label": "Failed Sales Orders"}}
+     ]
+   }}
 
-5. "Show me plant 7001 data"
-   → {{"intent": "plant_analysis", "filters": {{"Plant": "7001"}}}}
+5. "Provide total records due to Authorized to sell error"
+   → {{
+     "filters": {{"Auth Sell Flag Description": "No"}},
+     "aggregations": [
+       {{"column": null, "function": "count", "label": "Total Records"}}
+     ]
+   }}
 
-6. "I want plant 7001 details for auth flag active"
-   → {{"intent": "plant_analysis", "filters": {{"Plant": "7001", "Auth Sell Flag Description": "Yes"}}, "show_material_details": true}}
+6. "Total number failed records for active material but authorised to sell not active"
+   → {{
+     "filters": {{"Material Status Description": "Material Active", "Auth Sell Flag Description": "No"}},
+     "aggregations": [
+       {{"column": null, "function": "count", "label": "Failed Active Materials"}}
+     ]
+   }}
 
-7. "What are the sales exceptions?"
-   → {{"intent": "exceptions", "filters": {{}}}}
+7. "Total number of sales order for active material but authorised to sell not active"
+   → {{
+     "filters": {{"Material Status Description": "Material Active", "Auth Sell Flag Description": "No"}},
+     "aggregations": [
+       {{"column": "Sales Order Number", "function": "count_unique", "label": "Sales Orders"}}
+     ]
+   }}
 
-REMEMBER: When user mentions "failed due to auth" or "authorized to sell issue/error", ALWAYS add filter {{"Auth Sell Flag Description": "No"}}
+8. "Show me plant 7001 data" (no aggregation request)
+   → {{"filters": {{"Plant": "7001"}}}}
 """
         
-        self.chart_system_prompt = """You are a data visualization expert. Based on the user's query and the filtered data sample, suggest appropriate charts and tables.
+        # STAGE 2: CHART GENERATION BASED ON FILTERED DATA
+        chart_columns = db_schema.get_common_chart_columns()
+        all_cols = ', '.join(db_schema.get_all_columns())
+        
+        # Build prompt as regular string with {data_sample} placeholder
+        self.chart_system_prompt = """You are a data visualization expert. Based on the user's ORIGINAL query and the filtered data sample, suggest appropriate charts and tables.
 
-Data Sample:
+Filtered Data Sample:
 {data_sample}
+
+CRITICAL: You MUST use EXACT column names from this list:
+""" + all_cols + """
+
+Commonly used columns for charts:
+- Bar charts: """ + ', '.join(chart_columns['for_bar_charts']) + """
+- Pie charts: """ + ', '.join(chart_columns['for_pie_charts']) + """
+- Aggregation (sum): """ + ', '.join(chart_columns['for_aggregation']) + """
+- Detail tables: """ + ', '.join(chart_columns['for_details']) + """
+
+Note: "Material Descrption" has a typo in the actual data (missing 'i').
 
 Return JSON with:
 - charts: list of chart configurations, each with:
-  * type: "bar", "pie", "line", "scatter", "table"
-  * title: chart title
-  * x_column: column for x-axis (for bar, line, scatter)
-  * y_column: column for y-axis (for bar, line, scatter) or "count" for count aggregation
-  * group_by: column to group by (optional)
-  * agg_function: "count", "sum", "mean", "max", "min" (for aggregations)
-  * limit: number of top items to show (optional, default 10)
+  * type: "bar", "pie", "line", "scatter"
+  * title: descriptive chart title
+  * x_column: EXACT column name from data (for bar/line/scatter)
+  * y_column: EXACT column name OR "count" for count aggregation
+  * group_by: EXACT column name (for pie charts)
+  * agg_function: "count", "sum", "mean", "max", "min"
+  * limit: number of top items to show (default 10)
 - tables: list of table configurations with:
-  * columns: list of column names to display
+  * type: "table"
+  * columns: list of EXACT column names from data
   * title: table title
-  * limit: number of rows (optional, default 50)
+  * limit: number of rows (default 50)
 
-Example:
+IMPORTANT: Do NOT use column names that are not in the data. Do NOT return None for column names.
+
+Example for "plant 1007 auth flag active":
 {{
   "charts": [
-    {{"type": "bar", "title": "Material Count by Plant", "x_column": "Plant", "y_column": "count", "agg_function": "count", "limit": 10}},
+    {{"type": "bar", "title": "Top Materials by Quantity", "x_column": "Material", "y_column": "Order Quantity Sales Unit", "agg_function": "sum", "limit": 10}},
     {{"type": "pie", "title": "Authorization Status", "group_by": "Auth Sell Flag Description", "agg_function": "count"}}
   ],
   "tables": [
-    {{"columns": ["Material", "Material Descrption", "Plant", "Auth Sell Flag Description"], "title": "Material Details", "limit": 50}}
+    {{"type": "table", "columns": ["Material", "Material Descrption", "Order Quantity Sales Unit", "Auth Sell Flag Description"], "title": "Material Details", "limit": 50}}
   ]
 }}
 """
@@ -288,57 +341,13 @@ Example:
         ])
     
     def _get_columns_info(self) -> str:
-        """Get comprehensive column information from all datasets with data types and sample values"""
-        info = []
-        
-        # Focus on exception_report since that's what's loaded
-        if 'exception_report' in self.data and len(self.data['exception_report']) > 0:
-            df = self.data['exception_report']
-            info.append("Exception Report Data (exception_report):")
-            info.append(f"   Total Records: {len(df):,}")
-            info.append("")
-            info.append("   COLUMNS WITH DETAILS:")
-            info.append("   " + "="*70)
-            
-            # Show detailed info for ALL columns
-            for col in df.columns:
-                dtype = str(df[col].dtype)
-                unique_count = df[col].nunique()
-                null_count = df[col].isnull().sum()
-                
-                info.append(f"   • {col}")
-                info.append(f"     - Type: {dtype}")
-                info.append(f"     - Unique Values: {unique_count:,}")
-                info.append(f"     - Null Count: {null_count:,}")
-                
-                # Show sample values for each column
-                if unique_count <= 10:
-                    # Show all unique values if ≤10
-                    unique_vals = df[col].dropna().unique().tolist()
-                    info.append(f"     - All Values: {unique_vals}")
-                else:
-                    # Show top 5 sample values
-                    sample_vals = df[col].dropna().unique()[:5].tolist()
-                    info.append(f"     - Sample Values (first 5): {sample_vals}")
-                
-                # For numeric columns, show min/max/mean
-                if df[col].dtype in ['int64', 'float64']:
-                    try:
-                        min_val = df[col].min()
-                        max_val = df[col].max()
-                        mean_val = df[col].mean()
-                        info.append(f"     - Range: {min_val} to {max_val}, Mean: {mean_val:.2f}")
-                    except:
-                        pass
-                
-                info.append("")
-        
-        return "\n".join(info)
+        """Get column information from database schema (hardcoded)"""
+        return db_schema.generate_schema_prompt()
         
     def classify(self, query: str) -> Dict:
-        """Classify user intent with column-aware filtering"""
+        """Extract filters from user query - STAGE 1"""
         logger.info("=" * 80)
-        logger.info("STAGE 1: INTENT CLASSIFICATION WITH FILTER EXTRACTION")
+        logger.info("STAGE 1: FILTER EXTRACTION FROM QUERY")
         logger.info("=" * 80)
         logger.info(f"User Query: '{query}'")
         
@@ -354,15 +363,14 @@ Example:
                     "columns_info": self.columns_info
                 })
             else:
-                # Fallback to Pepsico internal LLM API
-                logger.info("Using Pepsico LLM API as fallback for classification...")
+                # Use Pepsico LLM API
+                logger.info("Using Pepsico LLM API for filter extraction...")
                 formatted_system_prompt = self.intent_system_prompt.format(columns_info=self.columns_info)
                 logger.info(f"System prompt length: {len(formatted_system_prompt)} chars")
-                logger.info(f"First 500 chars of system prompt: {formatted_system_prompt[:500]}")
                 
                 payload = {
                     "generation_model": "gpt-4o",
-                    "max_tokens": 1000,
+                    "max_tokens": 500,
                     "temperature": 0.0,
                     "top_p": 0.01,
                     "presence_penalty": 0,
@@ -378,9 +386,11 @@ Example:
                 logger.info(f"Sending query: '{query}'")
                 resp = invoke_llm(payload)
                 logger.info(f"Raw API response: {resp}")
+                
                 # Try to extract JSON from response
                 if isinstance(resp, dict) and resp.get('error'):
                     raise Exception(resp['error'])
+                    
                 # If API returns JSON with 'response' field, parse it
                 if isinstance(resp, dict) and 'response' in resp:
                     try:
@@ -394,60 +404,46 @@ Example:
                         logger.info(f"Successfully parsed JSON: {result}")
                     except Exception as e:
                         logger.error(f"Failed to parse JSON: {e}")
-                        result = {'intent': 'overview', 'filters': {}}
+                        result = {'filters': {}}
                 else:
                     result = resp
             
+            # Ensure result has filters key
+            if 'filters' not in result:
+                logger.warning("No 'filters' key in result, wrapping result")
+                result = {'filters': result if isinstance(result, dict) else {}}
+            
             elapsed = time.time() - start_time
             logger.info(f"✓ LLM Response received in {elapsed:.2f} seconds")
-            logger.info(f"Intent Classification Result:")
-            logger.info(json.dumps(result, indent=2))
+            logger.info(f"Extracted Filters:")
+            logger.info(json.dumps(result.get('filters', {}), indent=2))
             logger.info("=" * 80)
             
             return result
             
         except Exception as e:
-            logger.error(f"✗ Error in LLM classification: {str(e)}")
+            logger.error(f"✗ Error in filter extraction: {str(e)}")
             logger.exception("Full traceback:")
             
-            # Fallback classification
-            logger.warning("Using fallback classification...")
+            # Fallback: try to extract plant/material from query using regex
+            logger.warning("Using fallback filter extraction...")
             query_lower = query.lower()
+            fallback_filters = {}
             
-            if "authorized" in query_lower or "auth" in query_lower:
-                fallback_result = {
-                    "intent": "authorized_to_sell",
-                    "data_sources": ["auth_yes", "auth_no"],
-                    "visualizations": ["pie", "bar", "table", "metric"],
-                    "filters": {},
-                    "metrics": ["total_materials", "authorized_count", "unauthorized_count", "authorization_rate"]
-                }
-            elif "exception" in query_lower or "error" in query_lower:
-                fallback_result = {
-                    "intent": "exceptions",
-                    "data_sources": ["so_exceptions", "exception_report"],
-                    "visualizations": ["bar", "table", "metric", "line"],
-                    "filters": {},
-                    "metrics": ["total_exceptions", "exception_by_plant", "top_materials"]
-                }
-            elif "plant" in query_lower:
-                fallback_result = {
-                    "intent": "plant_analysis",
-                    "data_sources": ["auth_yes", "auth_no", "so_exceptions"],
-                    "visualizations": ["bar", "table", "metric"],
-                    "filters": {},
-                    "metrics": ["materials_by_plant", "authorization_rate_by_plant"]
-                }
-            else:
-                fallback_result = {
-                    "intent": "overview",
-                    "data_sources": ["auth_yes", "auth_no", "so_exceptions"],
-                    "visualizations": ["metric", "pie", "bar"],
-                    "filters": {},
-                    "metrics": ["total_overview"]
-                }
+            # Try to extract plant number
+            import re
+            plant_match = re.search(r'plant\s+(\d+)', query_lower)
+            if plant_match:
+                fallback_filters['Plant'] = plant_match.group(1)
             
-            logger.info(f"Fallback result: {json.dumps(fallback_result, indent=2)}")
+            # Try to detect auth flag
+            if 'auth flag active' in query_lower or 'authorized' in query_lower:
+                fallback_filters['Auth Sell Flag Description'] = 'Yes'
+            elif 'not authorized' in query_lower or 'auth flag no' in query_lower:
+                fallback_filters['Auth Sell Flag Description'] = 'No'
+            
+            fallback_result = {'filters': fallback_filters}
+            logger.info(f"Fallback filters: {json.dumps(fallback_filters, indent=2)}")
             logger.info("=" * 80)
             return fallback_result
     
@@ -516,21 +512,97 @@ Example:
             logger.info(f"✓ Chart config generated in {elapsed:.2f} seconds")
             logger.info(f"Chart Configuration:")
             logger.info(json.dumps(result, indent=2))
-            logger.info("=" * 80)
             
+            # Validate that charts have valid column names
+            if result and 'charts' in result:
+                valid_charts = []
+                for chart in result.get('charts', []):
+                    x_col = chart.get('x_column')
+                    y_col = chart.get('y_column')
+                    group_by = chart.get('group_by')
+                    
+                    # Check if columns are None or not in data
+                    if chart.get('type') == 'bar':
+                        if x_col and x_col in filtered_data.columns:
+                            valid_charts.append(chart)
+                        else:
+                            logger.warning(f"Skipping bar chart - invalid x_column: {x_col}")
+                    elif chart.get('type') == 'pie':
+                        if group_by and group_by in filtered_data.columns:
+                            valid_charts.append(chart)
+                        else:
+                            logger.warning(f"Skipping pie chart - invalid group_by: {group_by}")
+                    else:
+                        valid_charts.append(chart)
+                
+                result['charts'] = valid_charts
+                
+                # If no valid charts, use fallback
+                if not valid_charts:
+                    logger.warning("No valid charts from LLM, using fallback")
+                    return self._generate_fallback_charts(filtered_data)
+            
+            logger.info("=" * 80)
             return result
             
         except Exception as e:
             logger.error(f"✗ Error in chart generation: {str(e)}")
             logger.exception("Full traceback:")
             
-            # Fallback: basic charts
-            return {
-                "charts": [
-                    {"type": "table", "title": "Data Overview", "limit": 50}
-                ],
-                "tables": []
-            }
+            # Fallback: generate intelligent charts based on actual data columns
+            return self._generate_fallback_charts(filtered_data)
+    
+    def _generate_fallback_charts(self, data: pd.DataFrame) -> Dict:
+        """Generate fallback charts when LLM fails, using schema column names"""
+        logger.info("Generating fallback charts with schema column names...")
+        chart_cols = db_schema.get_common_chart_columns()
+        charts = []
+        
+        # Chart 1: If we have Plant column, show distribution
+        if 'Plant' in data.columns:
+            charts.append({
+                "type": "bar",
+                "title": "Records by Plant",
+                "x_column": "Plant",
+                "y_column": "count",
+                "agg_function": "count",
+                "limit": 10
+            })
+        
+        # Chart 2: If we have Material, show top materials
+        if 'Material' in data.columns:
+            charts.append({
+                "type": "bar",
+                "title": "Top Materials",
+                "x_column": "Material",
+                "y_column": "count",
+                "agg_function": "count",
+                "limit": 10
+            })
+        
+        # Chart 3: If we have Auth flag, show pie chart
+        if 'Auth Sell Flag Description' in data.columns:
+            charts.append({
+                "type": "pie",
+                "title": "Authorization Status",
+                "group_by": "Auth Sell Flag Description",
+                "agg_function": "count"
+            })
+        
+        # Always add a table with key columns from schema
+        key_cols = [col for col in chart_cols['for_details'] if col in data.columns]
+        if not key_cols:
+            key_cols = data.columns.tolist()[:5]  # First 5 columns as last resort
+        
+        return {
+            "charts": charts[:2],  # Max 2 charts
+            "tables": [{
+                "type": "table",
+                "columns": key_cols,
+                "title": "Data Details",
+                "limit": 50
+            }]
+        }
 
 # ===========================
 # 3. DASHBOARD GENERATOR
@@ -558,9 +630,16 @@ class DashboardGenerator:
         
         for col, value in filters.items():
             if col in filtered_df.columns:
-                # Convert value to string for comparison
-                filtered_df = filtered_df[filtered_df[col].astype(str) == str(value)]
-                logger.info(f"  ✓ Filtered by {col} = {value}, remaining rows: {len(filtered_df)}")
+                # Handle both single values and lists
+                if isinstance(value, list):
+                    # For lists, use .isin() to match any value in the list
+                    value_strings = [str(v) for v in value]
+                    filtered_df = filtered_df[filtered_df[col].astype(str).isin(value_strings)]
+                    logger.info(f"  ✓ Filtered by {col} in {value}, remaining rows: {len(filtered_df)}")
+                else:
+                    # For single values, use equality comparison
+                    filtered_df = filtered_df[filtered_df[col].astype(str) == str(value)]
+                    logger.info(f"  ✓ Filtered by {col} = {value}, remaining rows: {len(filtered_df)}")
             else:
                 logger.warning(f"  ⚠️ Column '{col}' not found in dataframe")
         
@@ -619,125 +698,133 @@ class DashboardGenerator:
             logger.error(f"Error rendering chart: {str(e)}")
             st.error(f"Could not render {chart_type} chart: {str(e)}")
         
-    def generate(self, intent_result: Dict, user_query: str):
-        """Generate dashboard based on classified intent with intelligent filtering and dynamic charts"""
+    def generate(self, filter_result: Dict, user_query: str):
+        """Generate dashboard using two-stage workflow: filters already extracted, now apply and visualize"""
         logger.info("=" * 80)
-        logger.info("GENERATING DYNAMIC DASHBOARD")
+        logger.info("APPLYING FILTERS AND GENERATING DASHBOARD")
         logger.info("=" * 80)
         
-        intent = intent_result.get('intent', 'overview')
-        filters = intent_result.get('filters', {})
-        show_material_details = intent_result.get('show_material_details', False)
-        aggregations = intent_result.get('aggregations', [])
+        filters = filter_result.get('filters', {})
         
-        logger.info(f"Dashboard Type: {intent}")
-        logger.info(f"Filters: {filters}")
-        logger.info(f"Show Material Details: {show_material_details}")
-        logger.info(f"Aggregations: {aggregations}")
+        logger.info(f"Filters to apply: {filters}")
         
         start_time = time.time()
         
-        # Determine which data to use based on intent
-        if intent in ['plant_analysis', 'material_analysis', 'customer_analysis']:
-            # Use exception_report data (auth data not loaded)
-            combined_data = self._apply_filters(self.data['exception_report'], filters)
-            
-            # Show filter summary
-            st.header(f"🔍 Filtered Data Analysis")
-            if filters:
-                filter_text = ", ".join([f"{k}={v}" for k, v in filters.items()])
-                st.info(f"**Filters Applied:** {filter_text}")
-            
-            # Metrics
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Total Records", f"{len(combined_data):,}")
-            
-            # Show unique counts for key columns
-            if 'Material' in combined_data.columns:
-                col2.metric("Unique Materials", f"{combined_data['Material'].nunique():,}")
-            if 'Plant' in combined_data.columns:
-                col3.metric("Unique Plants", f"{combined_data['Plant'].nunique():,}")
-            if 'Material Status Description' in combined_data.columns:
-                active_count = len(combined_data[combined_data['Material Status Description'] == 'Active'])
-                col4.metric("Active Materials", f"{active_count:,}")
-            
-            # Display custom aggregations if requested
-            if aggregations and len(combined_data) > 0:
-                st.markdown("---")
-                st.subheader("📊 Requested Metrics")
-                agg_cols = st.columns(min(len(aggregations), 4))
-                
-                for idx, agg in enumerate(aggregations[:4]):
-                    col_name = agg.get('column')
-                    func = agg.get('function', 'count')
-                    label = agg.get('label', f"{func.title()} of {col_name}")
-                    
-                    logger.info(f"Processing aggregation: {label}, column={col_name}, function={func}")
-                    logger.info(f"  Column exists: {col_name in combined_data.columns}")
-                    logger.info(f"  Data shape: {combined_data.shape}")
-                    
-                    if col_name in combined_data.columns:
-                        try:
-                            if func == 'count':
-                                value = len(combined_data)
-                            elif func == 'count_unique':
-                                value = combined_data[col_name].nunique()
-                                logger.info(f"  ✓ Unique values calculated: {value}")
-                            elif func == 'sum':
-                                value = combined_data[col_name].sum()
-                            elif func == 'mean':
-                                value = combined_data[col_name].mean()
-                            elif func == 'max':
-                                value = combined_data[col_name].max()
-                            elif func == 'min':
-                                value = combined_data[col_name].min()
-                            else:
-                                value = len(combined_data)
-                            
-                            # Format based on value type
-                            if isinstance(value, float):
-                                formatted_value = f"{value:,.2f}"
-                            else:
-                                formatted_value = f"{value:,}"
-                            
-                            logger.info(f"  ✓ Displaying metric: {label} = {formatted_value}")
-                            agg_cols[idx % 4].metric(label, formatted_value)
-                        except Exception as e:
-                            logger.error(f"Error calculating aggregation {label}: {e}")
-                            agg_cols[idx % 4].metric(label, "Error")
-            
-            # Generate dynamic charts using Stage 2 LLM
-            if len(combined_data) > 0:
-                st.markdown("---")
-                chart_config = self.classifier.generate_chart_config(user_query, combined_data, intent)
-                
-                # Render charts
-                if chart_config.get('charts'):
-                    cols = st.columns(2)
-                    for idx, chart in enumerate(chart_config['charts'][:4]):  # Limit to 4 charts
-                        with cols[idx % 2]:
-                            self._render_dynamic_chart(chart, combined_data)
-                
-                # Render tables
-                if chart_config.get('tables') or show_material_details:
-                    st.markdown("---")
-                    if show_material_details:
-                        st.subheader("📋 Material Details")
-                        detail_cols = [col for col in ['Material', 'Material Descrption', 'Plant', 
-                                                       'Material Status Description', 'Sales Order Number'] 
-                                      if col in combined_data.columns]
-                        st.dataframe(combined_data[detail_cols].head(100), use_container_width=True)
-                    else:
-                        for table in chart_config.get('tables', []):
-                            self._render_dynamic_chart(table, combined_data)
-            else:
-                st.warning("⚠️ No data found matching your filters.")
-                
-        elif intent == 'exceptions':
-            # Pass raw exception report into the dynamic handler; it will extract/apply filters safely
-            self._create_exceptions_dashboard_dynamic(self.data['exception_report'], user_query, filters, aggregations)
+        # APPLY FILTERS TO DATA (Stage 1 complete)
+        combined_data = self._apply_filters(self.data['exception_report'], filters)
+        
+        logger.info(f"Data filtered: {len(self.data['exception_report']):,} → {len(combined_data):,} records")
+        
+        if len(combined_data) == 0:
+            st.warning("⚠️ No data found matching your filters.")
+            st.info(f"**Filters Applied:** {json.dumps(filters, indent=2)}")
+            return
+        
+        # Display header and filter summary
+        st.header(f"🔍 Filtered Data Analysis")
+        if filters:
+            filter_text = ", ".join([f"{k}={v}" for k, v in filters.items()])
+            st.info(f"**Filters Applied:** {filter_text}")
         else:
-            self._create_overview_dashboard(intent_result)
+            st.info("**Showing all data (no filters applied)**")
+        
+        # Show basic metrics
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Records", f"{len(combined_data):,}")
+        
+        if 'Material' in combined_data.columns:
+            col2.metric("Unique Materials", f"{combined_data['Material'].nunique():,}")
+        if 'Plant' in combined_data.columns:
+            col3.metric("Unique Plants", f"{combined_data['Plant'].nunique():,}")
+        if 'Order Quantity Sales Unit' in combined_data.columns:
+            total_qty = combined_data['Order Quantity Sales Unit'].sum()
+            col4.metric("Total Quantity", f"{total_qty:,.0f}")
+        
+        # Handle custom aggregations from Stage 1
+        aggregations = filter_result.get('aggregations', [])
+        logger.info(f"📊 AGGREGATIONS RECEIVED: {aggregations}")
+        logger.info(f"Number of aggregations: {len(aggregations)}")
+        
+        if aggregations and len(combined_data) > 0:
+            st.markdown("---")
+            st.subheader("📊 Requested Metrics")
+            
+            # Show aggregations in expandable section for debugging
+            with st.expander("🔍 Aggregation Details (Debug)", expanded=False):
+                st.json(aggregations)
+            
+            agg_cols = st.columns(min(len(aggregations), 4))
+            
+            for idx, agg in enumerate(aggregations):
+                col_name = agg.get('column')
+                func = agg.get('function', 'count')
+                label = agg.get('label', f"{func.title()}")
+                
+                logger.info(f"Processing aggregation #{idx+1}: {label}, column={col_name}, function={func}")
+                logger.info(f"  Full aggregation object: {agg}")
+                
+                try:
+                    if func == 'count' and col_name is None:
+                        # Total record count
+                        value = len(combined_data)
+                    elif func == 'count':
+                        value = len(combined_data[col_name].dropna()) if col_name in combined_data.columns else 0
+                    elif func == 'count_unique':
+                        value = combined_data[col_name].nunique() if col_name in combined_data.columns else 0
+                    elif func == 'sum':
+                        value = combined_data[col_name].sum() if col_name in combined_data.columns else 0
+                    elif func == 'mean':
+                        value = combined_data[col_name].mean() if col_name in combined_data.columns else 0
+                    elif func == 'max':
+                        value = combined_data[col_name].max() if col_name in combined_data.columns else 0
+                    elif func == 'min':
+                        value = combined_data[col_name].min() if col_name in combined_data.columns else 0
+                    else:
+                        value = len(combined_data)
+                    
+                    # Format value
+                    if isinstance(value, float):
+                        formatted_value = f"{value:,.2f}"
+                    else:
+                        formatted_value = f"{value:,}"
+                    
+                    logger.info(f"  ✓ Displaying metric: {label} = {formatted_value}")
+                    agg_cols[idx % 4].metric(label, formatted_value)
+                except Exception as e:
+                    logger.error(f"Error calculating aggregation {label}: {e}")
+                    agg_cols[idx % 4].metric(label, "Error")
+        
+        # STAGE 2: GENERATE CHARTS BASED ON FILTERED DATA
+        logger.info("=" * 80)
+        logger.info("STAGE 2: CHART GENERATION FROM FILTERED DATA")
+        logger.info("=" * 80)
+        
+        st.markdown("---")
+        chart_config = self.classifier.generate_chart_config(user_query, combined_data, "analysis")
+        
+        # Render charts from Stage 2
+        if chart_config.get('charts'):
+            st.subheader("📊 Visualizations")
+            cols = st.columns(2)
+            for idx, chart in enumerate(chart_config['charts'][:4]):  # Limit to 4 charts
+                with cols[idx % 2]:
+                    self._render_dynamic_chart(chart, combined_data)
+        
+        # Render tables
+        if chart_config.get('tables'):
+            st.markdown("---")
+            for table in chart_config['tables']:
+                self._render_dynamic_chart(table, combined_data)
+        
+        # Download option
+        st.markdown("---")
+        csv = combined_data.to_csv(index=False)
+        st.download_button(
+            label="📥 Download Filtered Data",
+            data=csv,
+            file_name="filtered_data.csv",
+            mime="text/csv"
+        )
         
         elapsed = time.time() - start_time
         logger.info(f"✓ Dashboard generated in {elapsed:.2f} seconds")
@@ -1194,34 +1281,35 @@ def main():
     if user_query:
         query_start = time.time()
         
-        with st.spinner("🤔 Understanding your query..."):
-            intent_result = classifier.classify(user_query)
+        # STAGE 1: Extract Filters
+        with st.spinner("🔍 Stage 1: Extracting filters from query..."):
+            filter_result = classifier.classify(user_query)
             classification_time = time.time() - query_start
-            st.session_state.performance_metrics['classification_time'] = classification_time
+            st.session_state.performance_metrics['filter_extraction_time'] = classification_time
             
             # Log API call
             st.session_state.api_calls.append({
                 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                'type': 'LLM Classification',
+                'type': 'Stage 1: Filter Extraction',
                 'query': user_query,
-                'response': intent_result,
+                'response': filter_result,
                 'duration': f"{classification_time:.2f}s"
             })
         
-        # Show intent analysis
-        with st.expander("🔍 Query Analysis"):
+        # Show filter extraction results
+        with st.expander("🔍 Stage 1: Filter Extraction Results"):
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("**User Query:**")
                 st.code(user_query, language="text")
             with col2:
-                st.markdown("**Classified Intent:**")
-                st.json(intent_result)
+                st.markdown("**Extracted Filters:**")
+                st.json(filter_result.get('filters', {}))
         
-        # Generate Dashboard
+        # STAGE 2: Generate Dashboard with Charts
         dashboard_start = time.time()
-        with st.spinner("📊 Generating dashboard..."):
-            dashboard_gen.generate(intent_result, user_query)
+        with st.spinner("📊 Stage 2: Filtering data and generating charts..."):
+            dashboard_gen.generate(filter_result, user_query)
             dashboard_time = time.time() - dashboard_start
             st.session_state.performance_metrics['dashboard_generation_time'] = dashboard_time
         
@@ -1229,8 +1317,8 @@ def main():
         st.session_state.performance_metrics['total_time'] = total_time
         
     else:
-        # Default overview
-        dashboard_gen.generate({"intent": "overview"}, "Show overview of all data")
+        # Default: show all data
+        dashboard_gen.generate({"filters": {}}, "Show all data")
     
     # Developer Console (if enabled)
     if dev_mode:
@@ -1264,8 +1352,8 @@ def main():
                         st.metric("Init Time", f"{st.session_state.performance_metrics['initialization_time']:.2f}s")
                 
                 with metrics_col2:
-                    if 'classification_time' in st.session_state.performance_metrics:
-                        st.metric("LLM Classification", f"{st.session_state.performance_metrics['classification_time']:.2f}s")
+                    if 'filter_extraction_time' in st.session_state.performance_metrics:
+                        st.metric("Stage 1: Filter Extraction", f"{st.session_state.performance_metrics['filter_extraction_time']:.2f}s")
                 
                 with metrics_col3:
                     if 'dashboard_generation_time' in st.session_state.performance_metrics:
@@ -1276,10 +1364,10 @@ def main():
                     st.markdown(f"**Total Query Processing Time:** `{st.session_state.performance_metrics['total_time']:.2f}s`")
                 
                 # Performance breakdown chart
-                if 'classification_time' in st.session_state.performance_metrics:
+                if 'filter_extraction_time' in st.session_state.performance_metrics:
                     perf_data = pd.DataFrame([
-                        {'Stage': 'LLM Classification', 'Time (s)': st.session_state.performance_metrics.get('classification_time', 0)},
-                        {'Stage': 'Dashboard Generation', 'Time (s)': st.session_state.performance_metrics.get('dashboard_generation_time', 0)}
+                        {'Stage': 'Stage 1: Filter Extraction', 'Time (s)': st.session_state.performance_metrics.get('filter_extraction_time', 0)},
+                        {'Stage': 'Stage 2: Chart Generation + Render', 'Time (s)': st.session_state.performance_metrics.get('dashboard_generation_time', 0)}
                     ])
                     fig = px.bar(perf_data, x='Stage', y='Time (s)', title="Performance Breakdown")
                     st.plotly_chart(fig, width='stretch')
