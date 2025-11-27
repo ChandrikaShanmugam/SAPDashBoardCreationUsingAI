@@ -1312,8 +1312,8 @@ def main():
         loader_col1, loader_col2, loader_col3 = st.columns([2, 1, 2])
         with loader_col2:
             loader_placeholder = st.empty()
-            # Get absolute path to loader.gif
-            loader_path = Path(__file__).parent / "loader.gif"
+            # Get absolute path to Loader.gif (case-sensitive for Linux deployment)
+            loader_path = Path(__file__).parent / "Loader.gif"
             if loader_path.exists():
                 with open(loader_path, "rb") as f:
                     loader_data = base64.b64encode(f.read()).decode()
