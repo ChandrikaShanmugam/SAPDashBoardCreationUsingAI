@@ -86,8 +86,10 @@ def load_sap_data():
         #auth_no = pd.DataFrame()
         
         logger.info("Loading: Sales Order Exception report 13 and 14 Nov 2025.csv (via helper)")
-        data_dir = Path(__file__).parent.parent.parent / 'data'
-        exception_report = load_exception_csv(str(data_dir / 'Sales Order Exception report 13 and 14 Nov 2025.csv'))
+        data_dir = Path(__file__).resolve().parent.parent.parent / 'data'
+        exception_file = str(data_dir / 'Sales Order Exception report 13 and 14 Nov 2025.csv')
+        logger.info(f"Attempting to load from: {exception_file}")
+        exception_report = load_exception_csv(exception_file)
         logger.info(f"✓ Loaded {len(exception_report):,} records from Exception Report")
 
         # Use exception_report as the primary exceptions data

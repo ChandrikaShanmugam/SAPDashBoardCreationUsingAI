@@ -25,15 +25,20 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 # Default CSV path relative to this file's location
-DEFAULT_CSV = str(Path(__file__).parent.parent.parent / 'data' / 'Sales Order Exception report 13 and 14 Nov 2025.csv')
+def _get_default_csv_path():
+    """Get the default CSV path, resolving the absolute path at runtime."""
+    return str(Path(__file__).resolve().parent.parent.parent / 'data' / 'Sales Order Exception report 13 and 14 Nov 2025.csv')
 
 
 @lru_cache(maxsize=2)
-def load_exception_csv(filepath: str = DEFAULT_CSV) -> pd.DataFrame:
+def load_exception_csv(filepath: str = None) -> pd.DataFrame:
     """Load the exception CSV and cache it in memory for the process lifetime.
 
     Keeps loading logic tolerant to encodings and parsing errors.
     """
+    if filepath is None:
+        filepath = _get_default_csv_path()
+    
     encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
     for encoding in encodings:
         try:
