@@ -28,6 +28,7 @@ from exception_handler import (
     apply_filters,
     suggest_charts_from_llm,
 )
+from prompt_manager import PromptTemplateManager
 
 # Setup logging
 logging.basicConfig(
@@ -124,165 +125,18 @@ class IntentClassifier:
         #     logger.warning(f"LLM init failed, falling back to Pepsico LLM wrapper: {str(e)}")
         self.llm = None
         
-        # Get column information from datasets
-        self.columns_info = self._get_columns_info()
+        # Initialize prompt manager
+        self.prompt_manager = PromptTemplateManager()
         
-        # Define system prompts as strings for API calls
+        # Get column information from database schema
+        self.columns_info = db_schema.generate_schema_prompt()
+        
+        # Load prompts from template files
         # STAGE 1: FILTER EXTRACTION + AGGREGATION DETECTION
-        self.intent_system_prompt = """You are a SAP data analyst. Extract filters and aggregation requests from the user's query using EXACT column names.
-            
-{columns_info}
-
-**TERMINOLOGY MAPPINGS** (User Language → Column Names):
-- "location" / "plant" / "facility" → "Plant"
-- "customer account" / "customer" / "sold-to" / "sold to party" → "Sold-To Party"
-- "material description" / "material desc" → "Material Descrption" (note: typo in data)
-- "case qty" / "quantity" / "order quantity" / "qty" → "Order Quantity Sales Unit"
-- "sales order" / "order" / "SO" → "Sales Order Number"
-- "active material" / "material active" → Material Status Description = "Material Active"
-- "inactive material" / "material inactive" / "material is not active" → Material Status Description = "Material is not active"
-
-**FAILURE/ERROR TERMINOLOGY**:
-- "failure" / "failed" / "error" / "issue" / "exception" → Usually means Auth Sell Flag Description = "No"
-- "failed due to Authorized to Sell" → Auth Sell Flag Description = "No"
-- "Authorized to Sell issue/error" → Auth Sell Flag Description = "No"
-- "authorised to sell not active" → Auth Sell Flag Description = "No"
-- "auth to sell problem" → Auth Sell Flag Description = "No"
-
-**SUCCESS/AUTHORIZED TERMINOLOGY**:
-- "auth flag active" / "authorized" / "authorised" → Auth Sell Flag Description = "Yes"
-- "auth flag Yes" → Auth Sell Flag Description = "Yes"
-- "authorization active" → Auth Sell Flag Description = "Yes"
-
-**AGGREGATION DETECTION** (When user asks "How many", "Total number", "Count", "with qty"):
-If query asks for counts/totals, include "aggregations" array:
-- "How many materials" → count_unique on "Material"
-- "How many sales orders" → count_unique on "Sales Order Number"
-- "Total number of records" → count on any column (or omit column for row count)
-- "Total quantity" / "sum of qty" → sum on "Order Quantity Sales Unit"
-- "How many material description" → count_unique on "Material Descrption"
-- "with case qty" / "with qty" / "with quantity" → ALWAYS add sum on "Order Quantity Sales Unit"
-- If query mentions BOTH "how many [something]" AND "with case qty/quantity", return TWO aggregations:
-  1. count_unique on the thing being counted
-  2. sum on "Order Quantity Sales Unit"
-
-Return JSON with:
-- filters: object with EXACT column names as keys and filter values
-- aggregations: array of aggregation requests (ONLY if user asks "how many", "total", "count", "sum")
-
-Each aggregation object has:
-- column: EXACT column name (or null for total record count)
-- function: "count", "count_unique", "sum", "mean", "max", "min"
-- label: human-readable label for the metric
-
-Example queries with EXACT expected output:
-
-1. "I want plant 1007 details for auth flag active"
-   → {{"filters": {{"Plant": "1007", "Auth Sell Flag Description": "Yes"}}}}
-
-2. "How many failure material description for location 1007 with case qty"
-   → {{
-     "filters": {{"Plant": "1007", "Auth Sell Flag Description": "No"}},
-     "aggregations": [
-       {{"column": "Material Descrption", "function": "count_unique", "label": "Unique Materials"}},
-       {{"column": "Order Quantity Sales Unit", "function": "sum", "label": "Total Case Qty"}}
-     ]
-   }}
-
-3. "How many failure material description for customer account 0001234567 with case qty"
-   → {{
-     "filters": {{"Sold-To Party": "0001234567", "Auth Sell Flag Description": "No"}},
-     "aggregations": [
-       {{"column": "Material Descrption", "function": "count_unique", "label": "Unique Materials"}},
-       {{"column": "Order Quantity Sales Unit", "function": "sum", "label": "Total Case Qty"}}
-     ]
-   }}
-
-4. "Total number of sales order failed due to Authorized to Sell issue"
-   → {{
-     "filters": {{"Auth Sell Flag Description": "No"}},
-     "aggregations": [
-       {{"column": "Sales Order Number", "function": "count_unique", "label": "Failed Sales Orders"}}
-     ]
-   }}
-
-5. "Provide total records due to Authorized to sell error"
-   → {{
-     "filters": {{"Auth Sell Flag Description": "No"}},
-     "aggregations": [
-       {{"column": null, "function": "count", "label": "Total Records"}}
-     ]
-   }}
-
-6. "Total number failed records for active material but authorised to sell not active"
-   → {{
-     "filters": {{"Material Status Description": "Material Active", "Auth Sell Flag Description": "No"}},
-     "aggregations": [
-       {{"column": null, "function": "count", "label": "Failed Active Materials"}}
-     ]
-   }}
-
-7. "Total number of sales order for active material but authorised to sell not active"
-   → {{
-     "filters": {{"Material Status Description": "Material Active", "Auth Sell Flag Description": "No"}},
-     "aggregations": [
-       {{"column": "Sales Order Number", "function": "count_unique", "label": "Sales Orders"}}
-     ]
-   }}
-
-8. "Show me plant 7001 data" (no aggregation request)
-   → {{"filters": {{"Plant": "7001"}}}}
-"""
+        self.intent_system_prompt = self.prompt_manager.get_template('filter_extraction')
         
-        # STAGE 2: CHART GENERATION BASED ON FILTERED DATA
-        chart_columns = db_schema.get_common_chart_columns()
-        all_cols = ', '.join(db_schema.get_all_columns())
-        
-        # Build prompt as regular string with {data_sample} placeholder
-        self.chart_system_prompt = """You are a data visualization expert. Based on the user's ORIGINAL query and the filtered data sample, suggest appropriate charts and tables.
-
-Filtered Data Sample:
-{data_sample}
-
-CRITICAL: You MUST use EXACT column names from this list:
-""" + all_cols + """
-
-Commonly used columns for charts:
-- Bar charts: """ + ', '.join(chart_columns['for_bar_charts']) + """
-- Pie charts: """ + ', '.join(chart_columns['for_pie_charts']) + """
-- Aggregation (sum): """ + ', '.join(chart_columns['for_aggregation']) + """
-- Detail tables: """ + ', '.join(chart_columns['for_details']) + """
-
-Note: "Material Descrption" has a typo in the actual data (missing 'i').
-
-Return JSON with:
-- charts: list of chart configurations, each with:
-  * type: "bar", "pie", "line", "scatter"
-  * title: descriptive chart title
-  * x_column: EXACT column name from data (for bar/line/scatter)
-  * y_column: EXACT column name OR "count" for count aggregation
-  * group_by: EXACT column name (for pie charts)
-  * agg_function: "count", "sum", "mean", "max", "min"
-  * limit: number of top items to show (default 10)
-- tables: list of table configurations with:
-  * type: "table"
-  * columns: list of EXACT column names from data
-  * title: table title
-  * limit: number of rows (default 50)
-
-IMPORTANT: Do NOT use column names that are not in the data. Do NOT return None for column names.
-
-Example for "plant 1007 auth flag active":
-{{
-  "charts": [
-    {{"type": "bar", "title": "Top Materials by Quantity", "x_column": "Material", "y_column": "Order Quantity Sales Unit", "agg_function": "sum", "limit": 10}},
-    {{"type": "pie", "title": "Authorization Status", "group_by": "Auth Sell Flag Description", "agg_function": "count"}}
-  ],
-  "tables": [
-    {{"type": "table", "columns": ["Material", "Material Descrption", "Order Quantity Sales Unit", "Auth Sell Flag Description"], "title": "Material Details", "limit": 50}}
-  ]
-}}
-"""
+        # STAGE 2: CHART GENERATION BASED ON FILTERED DATA  
+        self.chart_system_prompt = self.prompt_manager.get_template('chart_generation')
         
         self.intent_prompt = ChatPromptTemplate.from_messages([
             ("system", """You are a SAP data analyst. Classify the user's query and determine what dashboard to create.
@@ -344,10 +198,6 @@ Example:
             ("user", "{query}")
         ])
     
-    def _get_columns_info(self) -> str:
-        """Get column information from database schema (hardcoded)"""
-        return db_schema.generate_schema_prompt()
-        
     def classify(self, query: str) -> Dict:
         """Extract filters from user query - STAGE 1"""
         logger.info("=" * 80)
@@ -482,6 +332,22 @@ Example:
                 })
             else:
                 logger.info("Using Pepsico LLM API as fallback for chart recommendations...")
+                
+                # Get chart columns from database schema
+                chart_columns = db_schema.get_common_chart_columns()
+                all_cols = ', '.join(db_schema.get_all_columns())
+                
+                # Format the chart prompt with dynamic columns
+                formatted_system_prompt = self.prompt_manager.format_template(
+                    'chart_generation',
+                    data_sample=json.dumps(data_sample, indent=2),
+                    all_columns=all_cols,
+                    bar_chart_columns=', '.join(chart_columns['for_bar_charts']),
+                    pie_chart_columns=', '.join(chart_columns['for_pie_charts']),
+                    aggregation_columns=', '.join(chart_columns['for_aggregation']),
+                    detail_columns=', '.join(chart_columns['for_details'])
+                )
+                
                 payload = {
                     "generation_model": "gpt-4o",
                     "max_tokens": 1500,
@@ -491,7 +357,7 @@ Example:
                     "frequency_penalty": 0,
                     "tools": [],
                     "tools_choice": "none",
-                    "system_prompt": self.chart_system_prompt.format(data_sample=json.dumps(data_sample, indent=2)),
+                    "system_prompt": formatted_system_prompt,
                     "custom_prompt": [
                         {"role": "user", "content": f"{query}\n\nData Sample:\n{json.dumps(data_sample, indent=2)}"}
                     ],

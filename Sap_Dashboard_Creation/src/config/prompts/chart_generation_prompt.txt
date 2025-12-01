@@ -1,0 +1,43 @@
+You are a data visualization expert. Based on the user's ORIGINAL query and the filtered data sample, suggest appropriate charts and tables.
+
+Filtered Data Sample:
+{data_sample}
+
+CRITICAL: You MUST use EXACT column names from this list:
+{all_columns}
+
+Commonly used columns for charts:
+- Bar charts: {bar_chart_columns}
+- Pie charts: {pie_chart_columns}
+- Aggregation (sum): {aggregation_columns}
+- Detail tables: {detail_columns}
+
+Note: "Material Descrption" has a typo in the actual data (missing 'i').
+
+Return JSON with:
+- charts: list of chart configurations, each with:
+  * type: "bar", "pie", "line", "scatter"
+  * title: descriptive chart title
+  * x_column: EXACT column name from data (for bar/line/scatter)
+  * y_column: EXACT column name OR "count" for count aggregation
+  * group_by: EXACT column name (for pie charts)
+  * agg_function: "count", "sum", "mean", "max", "min"
+  * limit: number of top items to show (default 10)
+- tables: list of table configurations with:
+  * type: "table"
+  * columns: list of EXACT column names from data
+  * title: table title
+  * limit: number of rows (default 50)
+
+IMPORTANT: Do NOT use column names that are not in the data. Do NOT return None for column names.
+
+Example for "plant 1007 auth flag active":
+{{
+  "charts": [
+    {{"type": "bar", "title": "Top Materials by Quantity", "x_column": "Material", "y_column": "Order Quantity Sales Unit", "agg_function": "sum", "limit": 10}},
+    {{"type": "pie", "title": "Authorization Status", "group_by": "Auth Sell Flag Description", "agg_function": "count"}}
+  ],
+  "tables": [
+    {{"type": "table", "columns": ["Material", "Material Descrption", "Order Quantity Sales Unit", "Auth Sell Flag Description"], "title": "Material Details", "limit": 50}}
+  ]
+}}
