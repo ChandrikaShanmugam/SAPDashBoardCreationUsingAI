@@ -85,7 +85,8 @@ def load_sap_data():
         #auth_no = pd.DataFrame()
         
         logger.info("Loading: Sales Order Exception report 13 and 14 Nov 2025.csv (via helper)")
-        exception_report = load_exception_csv('Sales Order Exception report 13 and 14 Nov 2025.csv')
+        data_dir = Path(__file__).parent.parent.parent / 'data'
+        exception_report = load_exception_csv(str(data_dir / 'Sales Order Exception report 13 and 14 Nov 2025.csv'))
         logger.info(f"✓ Loaded {len(exception_report):,} records from Exception Report")
 
         # Use exception_report as the primary exceptions data
@@ -1313,7 +1314,7 @@ def main():
         with loader_col2:
             loader_placeholder = st.empty()
             # Get absolute path to Loader.gif (case-sensitive for Linux deployment)
-            loader_path = Path(__file__).parent / "Loader.gif"
+            loader_path = Path(__file__).parent.parent.parent / "docs" / "Loader.gif"
             if loader_path.exists():
                 with open(loader_path, "rb") as f:
                     loader_data = base64.b64encode(f.read()).decode()

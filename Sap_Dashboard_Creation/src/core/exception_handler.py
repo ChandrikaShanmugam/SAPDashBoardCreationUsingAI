@@ -18,12 +18,14 @@ import pandas as pd
 import json
 import re
 import logging
+from pathlib import Path
 from pepsico_llm import invoke_llm
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-DEFAULT_CSV = 'Sales Order Exception report 13 and 14 Nov 2025.csv'
+# Default CSV path relative to this file's location
+DEFAULT_CSV = str(Path(__file__).parent.parent.parent / 'data' / 'Sales Order Exception report 13 and 14 Nov 2025.csv')
 
 
 @lru_cache(maxsize=2)
