@@ -172,15 +172,50 @@ def extract_filters_from_llm(query: str, columns_info: str) -> Dict[str, Any]:
     return fallback_filters
 
 
+def _normalize_material_number(value: str) -> str:
+    """Normalize material number by removing leading zeros.
+    
+    Handles cases where material numbers have different formats:
+    - '000000000300009120' -> '300009120'
+    - '300003291' -> '300003291'
+    """
+    if not value:
+        return value
+    # Convert to string and strip leading zeros, but keep at least one digit
+    str_value = str(value).strip()
+    # Remove leading zeros but keep the string if it's all zeros
+    normalized = str_value.lstrip('0') or '0'
+    return normalized
+
+
 def apply_filters(df: pd.DataFrame, filters: Dict[str, Any]) -> pd.DataFrame:
-    """Apply exact-column filters (equality) to dataframe."""
+    """Apply exact-column filters (equality) to dataframe.
+    
+    For Material-related columns, normalizes values by removing leading zeros
+    to ensure matching between different data sources.
+    """
     if not filters:
         return df.copy()
 
     filtered = df.copy()
+    
+    # List of columns that should use normalized comparison (remove leading zeros)
+    material_columns = ['Material', 'Customer Material Number', 'Material Found', 
+                        'INVENID (Order)', 'Pespsi Invenid', 'Inven Id']
+    
     for col, value in filters.items():
         if col in filtered.columns:
-            filtered = filtered[filtered[col].astype(str) == str(value)]
+            # Check if this is a material-related column that needs normalization
+            if col in material_columns:
+                # Normalize both the filter value and dataframe values
+                normalized_value = _normalize_material_number(str(value))
+                filtered = filtered[
+                    filtered[col].astype(str).apply(_normalize_material_number) == normalized_value
+                ]
+                logger.info(f"Applied normalized filter: {col} = {value} (normalized: {normalized_value})")
+            else:
+                # Standard exact match for non-material columns
+                filtered = filtered[filtered[col].astype(str) == str(value)]
         else:
             logger.warning("Requested filter column '%s' not found in dataframe", col)
 

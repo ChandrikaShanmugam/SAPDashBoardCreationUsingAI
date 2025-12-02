@@ -85,22 +85,60 @@ def load_sap_data():
         #auth_yes = pd.DataFrame()
         #auth_no = pd.DataFrame()
         
-        logger.info("Loading: Sales Order Exception report 13 and 14 Nov 2025.csv (via helper)")
         data_dir = Path(__file__).resolve().parent.parent.parent / 'data'
-        exception_file = str(data_dir / 'Sales Order Exception report 13 and 14 Nov 2025.csv')
+        
+        # Load Sales Order Exception Report (Table 1)
+        logger.info("Loading: Sales Order Exception report.csv (via helper)")
+        exception_file = str(data_dir / 'Sales Order Exception report.csv')
         logger.info(f"Attempting to load from: {exception_file}")
         exception_report = load_exception_csv(exception_file)
-        logger.info(f"✓ Loaded {len(exception_report):,} records from Exception Report")
+        logger.info(f"✓ Loaded {len(exception_report):,} records from Sales Order Exception Report")
+        logger.info(f"  Columns: {len(exception_report.columns)}")
+        
+        # Normalize Material numbers in exception report (strip leading zeros)
+        if 'Material' in exception_report.columns:
+            logger.info("Normalizing Material numbers in exception report (removing leading zeros)")
+            exception_report['Material_Original'] = exception_report['Material'].copy()
+            exception_report['Material'] = exception_report['Material'].astype(str).str.lstrip('0').replace('', '0')
+            logger.info(f"  Sample normalized: {exception_report[['Material_Original', 'Material']].head(3).to_dict()}")
 
         # Use exception_report as the primary exceptions data
         so_exceptions = exception_report
+        
+        # Load A1P Location Sequence (Table 2)
+        logger.info("Loading: A1P_Locn_Seq_EXPORT.csv")
+        location_file = str(data_dir / 'A1P_Locn_Seq_EXPORT.csv')
+        logger.info(f"Attempting to load from: {location_file}")
+        location_sequence = load_csv_with_encoding(location_file)
+        logger.info(f"✓ Loaded {len(location_sequence):,} records from A1P Location Sequence")
+        logger.info(f"  Columns: {len(location_sequence.columns)}")
+        
+        # Normalize Material numbers in location sequence (strip leading zeros)
+        if 'Material' in location_sequence.columns:
+            logger.info("Normalizing Material numbers in location sequence (removing leading zeros)")
+            location_sequence['Material_Original'] = location_sequence['Material'].copy()
+            location_sequence['Material'] = location_sequence['Material'].astype(str).str.lstrip('0').replace('', '0')
+            logger.info(f"  Sample normalized: {location_sequence[['Material_Original', 'Material']].head(3).to_dict()}")
+        
+        # Verify foreign key columns exist
+        common_cols = ['Plant', 'Material']
+        location_cols_exist = all(col in location_sequence.columns for col in ['Plant(Location)', 'Material'])
+        sales_cols_exist = all(col in exception_report.columns for col in common_cols)
+        
+        if location_cols_exist and sales_cols_exist:
+            logger.info("✓ Foreign key columns verified in both tables")
+            logger.info(f"  Sales Order: {common_cols}")
+            logger.info(f"  Location Sequence: ['Plant(Location)', 'Material']")
+        else:
+            logger.warning("⚠️ Foreign key columns not found in one or both tables")
         
         elapsed = time.time() - start_time
         logger.info(f"✓ All data loaded successfully in {elapsed:.2f} seconds")
         logger.info("=" * 80)
         
         data = {
-            'exception_report': exception_report
+            'exception_report': exception_report,
+            'location_sequence': location_sequence
         }
         return data
         
@@ -130,11 +168,11 @@ class IntentClassifier:
         # Initialize prompt manager
         self.prompt_manager = PromptTemplateManager()
         
-        # Get column information from database schema
-        self.columns_info = db_schema.generate_schema_prompt()
+        # NOTE: Schema information is now dynamically injected via prompt_manager
+        # No need to pre-generate columns_info - it's generated on-demand
         
         # Load prompts from template files
-        # STAGE 1: FILTER EXTRACTION + AGGREGATION DETECTION
+        # STAGE 1: FILTER EXTRACTION + AGGREGATION DETECTION (with cross-table support)
         self.intent_system_prompt = self.prompt_manager.get_template('filter_extraction')
         
         # STAGE 2: CHART GENERATION BASED ON FILTERED DATA  
@@ -216,13 +254,19 @@ Example:
                 logger.info("Sending request to local LLM (ChatOllama)...")
                 result = chain.invoke({
                     "query": query,
-                    "columns_info": self.columns_info
+                    "columns_info": self.prompt_manager.get_columns_info()
                 })
             else:
-                # Use Pepsico LLM API
+                # Use Pepsico LLM API with updated prompt template
                 logger.info("Using Pepsico LLM API for filter extraction...")
-                formatted_system_prompt = self.intent_system_prompt.format(columns_info=self.columns_info)
+                
+                # Use the new format_filter_extraction_prompt method that includes:
+                # - {columns_info}: All 84 columns (69 Sales Order + 15 Location)
+                # - {relationship_info}: Foreign key relationships (Plant, Material)
+                # - Cross-table filtering examples and guidance
+                formatted_system_prompt = self.prompt_manager.format_filter_extraction_prompt(query)
                 logger.info(f"System prompt length: {len(formatted_system_prompt)} chars")
+                logger.info("✓ Prompt includes cross-table filtering guidance")
                 
                 payload = {
                     "generation_model": "gpt-4o",
@@ -521,6 +565,82 @@ class DashboardGenerator:
         
         return filtered_df
     
+    def _apply_cross_table_filters(self, filter_result: Dict) -> pd.DataFrame:
+        """
+        Apply filters with support for cross-table queries using foreign key relationships.
+        
+        Args:
+            filter_result: Dict containing 'filters', 'requires_join', and 'join_on' keys
+        
+        Returns:
+            Filtered DataFrame (joined if necessary)
+        """
+        filters = filter_result.get('filters', {})
+        requires_join = filter_result.get('requires_join', False)
+        join_on = filter_result.get('join_on', ['Plant', 'Material'])
+        
+        logger.info(f"Cross-table filtering: requires_join={requires_join}")
+        
+        # Start with Sales Order data
+        sales_df = self.data['exception_report'].copy()
+        
+        if not requires_join:
+            # Simple single-table filtering
+            logger.info("Single-table query - filtering Sales Order table only")
+            return self._apply_filters(sales_df, filters)
+        
+        # Cross-table query - need to join
+        logger.info("Cross-table query detected - performing JOIN")
+        location_df = self.data['location_sequence'].copy()
+        
+        # Separate filters by table
+        sales_filters = {}
+        location_filters = {}
+        
+        # Get column names from both tables
+        sales_cols = set(sales_df.columns)
+        # Note: Location table uses 'Plant(Location)' instead of 'Plant'
+        location_cols = set(location_df.columns)
+        
+        for col, value in filters.items():
+            if col in sales_cols:
+                sales_filters[col] = value
+                logger.info(f"  Filter for Sales Order table: {col} = {value}")
+            elif col in location_cols:
+                location_filters[col] = value
+                logger.info(f"  Filter for Location table: {col} = {value}")
+            else:
+                logger.warning(f"  Column '{col}' not found in either table")
+        
+        # Apply filters to each table before joining
+        if sales_filters:
+            sales_df = self._apply_filters(sales_df, sales_filters)
+            logger.info(f"Sales Order filtered: {len(sales_df):,} rows")
+        
+        if location_filters:
+            location_df = self._apply_filters(location_df, location_filters)
+            logger.info(f"Location Sequence filtered: {len(location_df):,} rows")
+        
+        # Perform the JOIN
+        # Note: Location table uses 'Plant(Location)' instead of 'Plant'
+        logger.info(f"Joining on: Sales.Plant = Location.Plant(Location) AND Sales.Material = Location.Material")
+        
+        merged_df = pd.merge(
+            sales_df,
+            location_df,
+            left_on=['Plant', 'Material'],
+            right_on=['Plant(Location)', 'Material'],
+            how='inner',
+            suffixes=('', '_location')
+        )
+        
+        logger.info(f"✓ Join complete: {len(merged_df):,} rows")
+        
+        # Add a column to indicate this is joined data
+        merged_df['_is_joined'] = True
+        
+        return merged_df
+    
     def _render_dynamic_chart(self, chart_config: Dict, data: pd.DataFrame):
         """Render a chart based on LLM-generated configuration"""
         chart_type = chart_config.get('type', 'table')
@@ -581,13 +701,19 @@ class DashboardGenerator:
         logger.info("=" * 80)
         
         filters = filter_result.get('filters', {})
+        requires_join = filter_result.get('requires_join', False)
         
         logger.info(f"Filters to apply: {filters}")
+        logger.info(f"Cross-table query: {requires_join}")
         
         start_time = time.time()
         
-        # APPLY FILTERS TO DATA (Stage 1 complete)
-        combined_data = self._apply_filters(self.data['exception_report'], filters)
+        # APPLY FILTERS TO DATA (Stage 1 complete) with cross-table support
+        if requires_join:
+            combined_data = self._apply_cross_table_filters(filter_result)
+            logger.info(f"✓ Cross-table join performed")
+        else:
+            combined_data = self._apply_filters(self.data['exception_report'], filters)
         
         logger.info(f"Data filtered: {len(self.data['exception_report']):,} → {len(combined_data):,} records")
         
@@ -598,6 +724,11 @@ class DashboardGenerator:
         
         # Display header and filter summary
         st.header(f"🔍 Filtered Data Analysis")
+        
+        # Show cross-table query indicator
+        if requires_join:
+            st.success("✨ Cross-table query: Results from Sales Order + Location Sequence tables")
+        
         if filters:
             filter_text = ", ".join([f"{k}={v}" for k, v in filters.items()])
             st.info(f"**Filters Applied:** {filter_text}")
