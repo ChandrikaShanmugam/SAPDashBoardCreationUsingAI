@@ -1454,28 +1454,23 @@ Look for:
         with debug_tabs[3]:
             st.subheader("💾 Loaded Data Information")
             
-            data_info = {
-                'Authorized Yes': {
-                    'records': len(data['auth_yes']),
-                    'columns': list(data['auth_yes'].columns),
-                    'memory': f"{data['auth_yes'].memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB"
-                },
-                'Authorized No': {
-                    'records': len(data['auth_no']),
-                    'columns': list(data['auth_no'].columns),
-                    'memory': f"{data['auth_no'].memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB"
-                },
-                'SO Exceptions': {
-                    'records': len(data['so_exceptions']),
-                    'columns': list(data['so_exceptions'].columns),
-                    'memory': f"{data['so_exceptions'].memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB"
-                },
-                'Exception Report': {
+            # Build data_info dynamically based on what's actually loaded
+            data_info = {}
+            
+            # Check which datasets are available and add them to data_info
+            if 'exception_report' in data and data['exception_report'] is not None:
+                data_info['Sales Order Exception Report'] = {
                     'records': len(data['exception_report']),
                     'columns': list(data['exception_report'].columns),
                     'memory': f"{data['exception_report'].memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB"
                 }
-            }
+            
+            if 'location_sequence' in data and data['location_sequence'] is not None:
+                data_info['A1P Location Sequence'] = {
+                    'records': len(data['location_sequence']),
+                    'columns': list(data['location_sequence'].columns),
+                    'memory': f"{data['location_sequence'].memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB"
+                }
             
             for dataset_name, info in data_info.items():
                 with st.expander(f"📁 {dataset_name}"):
