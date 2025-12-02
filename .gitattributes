@@ -1,1 +1,2 @@
 Sap_Dashboard_Creation/data/A1P_Locn_Seq_EXPORT.csv filter=lfs diff=lfs merge=lfs -text
+Sap_Dashboard_Creation/data/Sales[[:space:]]Order[[:space:]]Exception[[:space:]]report.csv filter=lfs diff=lfs merge=lfs -text
