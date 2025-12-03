@@ -3,6 +3,15 @@ You are a data visualization expert. Based on the user's ORIGINAL query and the 
 Filtered Data Sample:
 {data_sample}
 
+**FUZZY COLUMN MATCHING** (CRITICAL):
+Users may use typos, different cases, or abbreviations in their query. You MUST intelligently map to actual column names:
+- IGNORE case: "material description" → "Material Descrption"
+- IGNORE spacing: "caseqty" or "case qty" → "Order Quantity Sales Unit"
+- HANDLE typos: "descrption" / "descripton" → "Material Descrption" (actual column has typo)
+- HANDLE abbreviations: "qty" → "Order Quantity Sales Unit", "desc" → "Descrption"
+- PARTIAL matches: "customer" could mean "Sold-To Party", "customer hierarchy" could mean "Customer Hierarchy Level 6 Text"
+- USE context: "failure material description" → Show "Material Descrption" column for records with Auth issues
+
 CRITICAL: You MUST use EXACT column names from this list:
 {all_columns}
 
@@ -12,13 +21,20 @@ Commonly used columns for charts:
 - Aggregation (sum): {aggregation_columns}
 - Detail tables: {detail_columns}
 
-Note: "Material Descrption" has a typo in the actual data (missing 'i').
+Note: "Material Descrption" has a typo in the actual data (missing 'i'). Users may type "description" correctly - map it to "Descrption".
+
+**CRITICAL RULE - ALWAYS INCLUDE GROUPED CHARTS:**
+For ANY query that involves aggregations (count, sum, etc.) or multiple data dimensions:
+- ALWAYS try to generate at least ONE grouped or stacked bar chart to show relationships
+- Look for natural groupings in the data: Material × Location, UPC × Plant, Customer × Product, etc.
+- Even if the user doesn't explicitly ask for it, provide insights through grouped visualizations
+- The goal is to show not just totals, but HOW those totals are composed
 
 **CRITICAL - MULTI-DIMENSIONAL QUERIES (Multiple "AND" or "BY" Dimensions):**
 When the user asks for multiple dimensions connected by "and", "with", or lists multiple grouping fields:
 - Generate MULTIPLE visualizations to show the relationships:
   1. Individual charts for EACH dimension
-  2. ONE multi-level grouped/stacked chart showing the relationship between dimensions (when data allows)
+  2. ONE or MORE multi-level grouped/stacked charts showing the relationship between dimensions
   3. A comprehensive detail table showing ALL dimensions together
 - Examples:
   * "Order Quantity by UPC and Customer Hierarchy" → Generate:
@@ -43,11 +59,56 @@ When the user asks for multiple dimensions connected by "and", "with", or lists 
 - Include a color legend to distinguish the groups
 - Title should clearly indicate the multi-dimensional relationship
 
-**SINGLE DIMENSION QUERIES:**
-When the user asks for "based on [X]", "by [X]" with ONLY ONE dimension:
-- Generate ONE main chart showing that breakdown
-- PLUS one detail table
-- Example: "Order Quantity based UPC details" → ONE chart for UPC, ONE table
+**SINGLE DIMENSION QUERIES WITH AGGREGATIONS:**
+When the user asks for counts/aggregations "for a location" or "by location" but also mentions Material/UPC/Customer:
+- The query implies showing the relationship between the main dimension (Material/UPC) and Location
+- ALWAYS generate MULTIPLE visualizations including at least one grouped chart:
+  1. Bar chart: Main aggregation by primary dimension (Material, UPC, etc.)
+  2. Bar chart: Aggregation by secondary dimension (Location, Plant, etc.)
+  3. GROUPED/STACKED chart: ALWAYS show the relationship between both dimensions (REQUIRED)
+  4. Detail table with all relevant columns
+- Examples:
+  * "How many failure materials for a location with case qty" → Generate:
+    1. Bar: Count of Materials by Location
+    2. Bar: Case Qty by Location
+    3. GROUPED: Materials by Location, colored by top Materials (shows which materials drive failures in each location) - REQUIRED
+    4. Table with Material, Location, Case Qty, Rejection Reason
+  * "Count UPC by plant with quantity" → Generate:
+    1. Bar: Count UPC by Plant
+    2. Bar: Total Quantity by Plant
+    3. GROUPED: Plant × UPC showing which UPCs are in which plants - REQUIRED
+    4. Table with UPC, Plant, Quantity
+  * "Sales orders by location" → Generate:
+    1. Bar: Sales Orders by Location
+    2. GROUPED: Location × Material showing which materials are ordered in each location - REQUIRED
+    3. Table with Location, Material, Sales Orders
+
+**SINGLE DIMENSION WITHOUT CLEAR SECONDARY:**
+When the user asks about one dimension only (e.g., "Total sales by plant"):
+- Generate main chart for the primary dimension
+- ALWAYS add a grouped chart showing breakdown by a relevant secondary dimension from the data:
+  * For Plant queries → group by Material, Customer, or Rejection Reason
+  * For Material queries → group by Plant, Location, or Customer
+  * For Customer queries → group by Material, Plant, or Product
+- Examples:
+  * "Total quantity by plant" → Generate:
+    1. Bar: Total Quantity by Plant
+    2. GROUPED: Plant × Material (top materials per plant) - REQUIRED
+    3. Table with Plant, Material, Quantity
+  * "Failure count by material" → Generate:
+    1. Bar: Failure Count by Material
+    2. GROUPED: Material × Location (which locations have issues with which materials) - REQUIRED
+    3. Table with Material, Location, Failure details
+
+**SIMPLE SINGLE DIMENSION QUERIES (Display Only):**
+When the user asks for "based on [X]", "by [X]" with truly ONLY ONE dimension and NO aggregations or counts:
+- Generate main chart showing that breakdown
+- If data allows, still add a grouped chart to show composition
+- PLUS detail table
+- Example: "Order Quantity based on UPC details" → 
+  1. Bar: Order Quantity by UPC
+  2. GROUPED: UPC × Plant (if applicable, shows where UPCs are distributed)
+  3. Table: UPC details
 
 Return JSON with:
 - charts: list of chart configurations, each with:
@@ -66,6 +127,12 @@ Return JSON with:
   * title: table title
   * limit: number of rows (default 50)
 
+**GOLDEN RULE - GROUPED CHARTS ARE MANDATORY:**
+- For EVERY user query, try to include at least ONE grouped_bar or stacked_bar chart
+- Grouped charts provide the most valuable insights by showing relationships
+- Even simple queries benefit from seeing how data is distributed across dimensions
+- Only skip grouped charts if the data truly has no natural secondary dimension
+
 IMPORTANT: Do NOT use column names that are not in the data. Do NOT return None for column names.
 
 Example for "plant 1007 auth flag active":
@@ -79,10 +146,11 @@ Example for "plant 1007 auth flag active":
   ]
 }}
 
-Example for "Order Quantity based UPC details" (SINGLE DIMENSION):
+Example for "Order Quantity based UPC details" (SINGLE DIMENSION - Still include grouped chart):
 {{
   "charts": [
-    {{"type": "bar", "title": "Order Quantity by UPC", "x_column": "UPC", "y_column": "Order Quantity Sales Unit", "agg_function": "sum", "limit": 15}}
+    {{"type": "bar", "title": "Order Quantity by UPC", "x_column": "UPC", "y_column": "Order Quantity Sales Unit", "agg_function": "sum", "limit": 15}},
+    {{"type": "grouped_bar", "title": "Order Quantity by UPC and Plant", "x_column": "UPC", "y_column": "Order Quantity Sales Unit", "color_by": "Plant", "agg_function": "sum", "limit": 10, "limit_groups": 5}}
   ],
   "tables": [
     {{"type": "table", "columns": ["UPC", "Material", "Material Descrption", "Order Quantity Sales Unit", "Plant"], "title": "UPC Details", "limit": 50}}
@@ -101,13 +169,26 @@ Example for "Order Quantity by UPC and Customer Hierarchy" (MULTIPLE DIMENSIONS 
   ]
 }}
 
-Example for "Sales by plant" (SINGLE DIMENSION):
+Example for "How many failure materials for a location with case qty" (IMPLIED MULTI-DIMENSION with GROUPED CHART):
 {{
   "charts": [
-    {{"type": "bar", "title": "Order Quantity by Plant", "x_column": "Plant", "y_column": "Order Quantity Sales Unit", "agg_function": "sum", "limit": 20}}
+    {{"type": "bar", "title": "Count of Failure Materials by Location", "x_column": "Location Description", "y_column": "count", "agg_function": "count", "limit": 10}},
+    {{"type": "bar", "title": "Total Case Quantity by Location", "x_column": "Location Description", "y_column": "Order Quantity Sales Unit", "agg_function": "sum", "limit": 10}},
+    {{"type": "grouped_bar", "title": "Failure Materials by Location", "x_column": "Location Description", "y_column": "Order Quantity Sales Unit", "color_by": "Material Descrption", "agg_function": "sum", "limit": 8, "limit_groups": 5}}
   ],
   "tables": [
-    {{"type": "table", "columns": ["Plant", "Location Description", "Order Quantity Sales Unit"], "title": "Plant Details", "limit": 50}}
+    {{"type": "table", "columns": ["Location Description", "Material Descrption", "Order Quantity Sales Unit", "Reason for Rejection Description", "Plant"], "title": "Failure Material Details by Location", "limit": 50}}
+  ]
+}}
+
+Example for "Sales by plant" (SINGLE DIMENSION - Add grouped chart):
+{{
+  "charts": [
+    {{"type": "bar", "title": "Order Quantity by Plant", "x_column": "Plant", "y_column": "Order Quantity Sales Unit", "agg_function": "sum", "limit": 20}},
+    {{"type": "grouped_bar", "title": "Order Quantity by Plant and Material", "x_column": "Plant", "y_column": "Order Quantity Sales Unit", "color_by": "Material Descrption", "agg_function": "sum", "limit": 10, "limit_groups": 5}}
+  ],
+  "tables": [
+    {{"type": "table", "columns": ["Plant", "Location Description", "Material Descrption", "Order Quantity Sales Unit"], "title": "Plant Details", "limit": 50}}
   ]
 }}
 
