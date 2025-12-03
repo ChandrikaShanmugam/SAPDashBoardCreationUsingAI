@@ -27,6 +27,9 @@ Location Sequence Table includes: Inven Id, Inven Sequ Number, Inven Group Name,
 - "material description" / "material desc" → "Material Descrption" (note: typo in data)
 - "case qty" / "quantity" / "order quantity" / "qty" → "Order Quantity Sales Unit"
 - "sales order" / "order" / "SO" → "Sales Order Number"
+- "upc" / "universal product code" → "UPC" or "EAN/UPC"
+- "gtin" / "global trade item number" → "GTIN"
+- "inventory id" / "inven id" → "INVENID (Order)" or "Inven Id" (depending on context)
 - "active material" / "material active" → Material Status Description = "Material Active"
 - "inactive material" / "material inactive" / "material is not active" → Material Status Description = "Material is not active"
 
@@ -53,6 +56,18 @@ If query asks for counts/totals, include "aggregations" array:
 - If query mentions BOTH "how many [something]" AND "with case qty/quantity", return TWO aggregations:
   1. count_unique on the thing being counted
   2. sum on "Order Quantity Sales Unit"
+
+**GROUPING/DISPLAY QUERIES** (When user asks "based on", "by", "details for/about", "breakdown"):
+If user asks for "details based on X" or "by X" or "breakdown by X" without specific filter values:
+- This means they want to GROUP/DISPLAY data by that column
+- Return EMPTY filters: {{"filters": {{}}}}
+- Include aggregation with group_by if appropriate
+- Examples:
+  - "Order Quantity based UPC details" → NO FILTERS (they want to see all UPCs with their quantities)
+  - "Sales by plant" → NO FILTERS (they want to see all plants)
+  - "Material details by customer" → NO FILTERS (they want to see all customers)
+  - "Breakdown by location" → NO FILTERS (they want to see all locations)
+- If they want SPECIFIC values, they'll say "for plant 1001" or "where customer is X"
 
 Return JSON with:
 - filters: object with EXACT column names as keys and filter values
@@ -185,6 +200,22 @@ Example queries with EXACT expected output:
      }}
    }}
    Note: "Auth to sell flag" (Location table) vs "Auth Sell Flag Description" (Sales Order table)
+
+15. "Order Quantity based UPC details" (display/grouping query - NO specific filters)
+   → {{"filters": {{}}}}
+   Note: User wants to see UPC data with order quantities - this is a display request, not a filter
+
+16. "Sales by plant" (display/grouping query - NO specific filters)
+   → {{"filters": {{}}}}
+   Note: User wants breakdown by all plants - no filtering needed
+
+17. "Material details by customer" (display/grouping query - NO specific filters)
+   → {{"filters": {{}}}}
+   Note: User wants to see all customers with material details - no filtering needed
+
+18. "Show me UPC details for plant 1007" (HAS specific filter value)
+   → {{"filters": {{"Plant": "1007"}}}}
+   Note: User specified plant 1007, so we filter by it
 
 **CROSS-TABLE QUERY DETECTION**:
 Set "requires_join": true and "join_on": ["Plant", "Material"] when filters include columns from BOTH:

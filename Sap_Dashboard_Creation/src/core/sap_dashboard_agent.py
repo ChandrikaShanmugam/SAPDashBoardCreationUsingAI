@@ -54,22 +54,29 @@ def load_sap_data():
     
     def load_csv_with_encoding(filepath):
         """Try to load CSV with different encodings and handle parsing issues"""
+        # Get text columns from schema instead of hardcoding
+        string_columns = db_schema.get_text_columns(table="all")
+        
         encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
         for encoding in encodings:
             try:
                 # Try with error_bad_lines=False (pandas <2.0) or on_bad_lines='skip' (pandas >=2.0)
-                return pd.read_csv(filepath, encoding=encoding, on_bad_lines='skip', engine='python')
+                return pd.read_csv(filepath, encoding=encoding, on_bad_lines='skip', engine='python',
+                                 dtype={col: str for col in string_columns})
             except (UnicodeDecodeError, ValueError):
                 try:
                     # Fallback: try without on_bad_lines parameter
-                    return pd.read_csv(filepath, encoding=encoding, engine='python')
+                    return pd.read_csv(filepath, encoding=encoding, engine='python',
+                                     dtype={col: str for col in string_columns})
                 except:
                     continue
         # If all fail, try with error handling
         try:
-            return pd.read_csv(filepath, encoding='latin-1', on_bad_lines='skip', engine='python')
+            return pd.read_csv(filepath, encoding='latin-1', on_bad_lines='skip', engine='python',
+                             dtype={col: str for col in string_columns})
         except:
-            return pd.read_csv(filepath, encoding='latin-1', engine='python')
+            return pd.read_csv(filepath, encoding='latin-1', engine='python',
+                             dtype={col: str for col in string_columns})
     
     try:
         # Commented out auth files - focusing on exception report only
@@ -658,6 +665,10 @@ class DashboardGenerator:
                     st.error(f"Column '{x_col}' not found in data. Available columns: {', '.join(data.columns.tolist())}")
                     return
                 
+                # Create a copy and ensure x_column is string type to prevent number abbreviations
+                data = data.copy()
+                data[x_col] = data[x_col].astype(str)
+                
                 if y_col == 'count' or agg_func == 'count':
                     chart_data = data.groupby(x_col, dropna=False).size().reset_index(name='Count')
                     chart_data = chart_data.sort_values('Count', ascending=False).head(limit)
@@ -671,6 +682,63 @@ class DashboardGenerator:
                     chart_data = chart_data.sort_values(y_col, ascending=False).head(limit)
                     fig = px.bar(chart_data, x=x_col, y=y_col, title=title)
                 
+                # Force categorical axis and disable abbreviations for ALL columns
+                fig.update_xaxes(type='category', tickmode='linear')
+                fig.update_layout(xaxis={'categoryorder': 'total descending'})
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+            elif chart_type in ['grouped_bar', 'stacked_bar']:
+                x_col = chart_config.get('x_column')
+                y_col = chart_config.get('y_column')
+                color_by = chart_config.get('color_by')
+                agg_func = chart_config.get('agg_function', 'sum')
+                limit = chart_config.get('limit', 10)
+                limit_groups = chart_config.get('limit_groups', 5)
+                
+                # Validate columns exist
+                if not x_col or x_col not in data.columns:
+                    st.error(f"Column '{x_col}' not found in data")
+                    return
+                if not color_by or color_by not in data.columns:
+                    st.error(f"Column '{color_by}' not found in data")
+                    return
+                
+                # Create a copy and convert to string
+                data = data.copy()
+                data[x_col] = data[x_col].astype(str)
+                data[color_by] = data[color_by].astype(str)
+                
+                # Get top items for x-axis
+                if y_col == 'count' or agg_func == 'count':
+                    top_x = data[x_col].value_counts().head(limit).index.tolist()
+                else:
+                    if not y_col or y_col not in data.columns:
+                        st.error(f"Column '{y_col}' not found in data")
+                        return
+                    top_x = data.groupby(x_col)[y_col].agg(agg_func).nlargest(limit).index.tolist()
+                
+                # Get top groups for color
+                if y_col == 'count' or agg_func == 'count':
+                    top_groups = data[color_by].value_counts().head(limit_groups).index.tolist()
+                else:
+                    top_groups = data.groupby(color_by)[y_col].agg(agg_func).nlargest(limit_groups).index.tolist()
+                
+                # Filter data
+                filtered = data[data[x_col].isin(top_x) & data[color_by].isin(top_groups)]
+                
+                # Aggregate
+                if y_col == 'count' or agg_func == 'count':
+                    chart_data = filtered.groupby([x_col, color_by]).size().reset_index(name='Count')
+                    y_col = 'Count'
+                else:
+                    chart_data = filtered.groupby([x_col, color_by])[y_col].agg(agg_func).reset_index()
+                
+                # Create chart
+                barmode = 'group' if chart_type == 'grouped_bar' else 'stack'
+                fig = px.bar(chart_data, x=x_col, y=y_col, color=color_by, 
+                           title=title, barmode=barmode)
+                fig.update_xaxes(type='category')
                 st.plotly_chart(fig, use_container_width=True)
                 
             elif chart_type == 'pie':
@@ -679,6 +747,11 @@ class DashboardGenerator:
                 if not group_col or group_col not in data.columns:
                     st.error(f"Column '{group_col}' not found in data. Available columns: {', '.join(data.columns.tolist())}")
                     return
+                
+                # Convert to string to prevent abbreviations
+                data = data.copy()
+                data[group_col] = data[group_col].astype(str)
+                
                 pie_data = data.groupby(group_col, dropna=False).size().reset_index(name='Count')
                 fig = px.pie(pie_data, names=group_col, values='Count', title=title)
                 st.plotly_chart(fig, use_container_width=True)

@@ -14,15 +14,52 @@ Commonly used columns for charts:
 
 Note: "Material Descrption" has a typo in the actual data (missing 'i').
 
+**CRITICAL - MULTI-DIMENSIONAL QUERIES (Multiple "AND" or "BY" Dimensions):**
+When the user asks for multiple dimensions connected by "and", "with", or lists multiple grouping fields:
+- Generate MULTIPLE visualizations to show the relationships:
+  1. Individual charts for EACH dimension
+  2. ONE multi-level grouped/stacked chart showing the relationship between dimensions (when data allows)
+  3. A comprehensive detail table showing ALL dimensions together
+- Examples:
+  * "Order Quantity by UPC and Customer Hierarchy" → Generate:
+    1. Bar chart: Order Quantity by UPC (top 10-15 values)
+    2. Bar chart: Order Quantity by Customer Hierarchy Level 6 Text (top 10-15 values)
+    3. GROUPED BAR or STACKED BAR chart: Order Quantity by UPC, colored/grouped by Customer Hierarchy (shows relationship)
+    4. Table with: UPC, Customer Hierarchy columns, Sold-to Name, Material Descrption, Order Quantity
+  * "Sales by plant and customer" → Generate:
+    1. Bar chart: Sales by Plant
+    2. Bar chart: Sales by Customer
+    3. GROUPED/STACKED chart: Sales by Plant, grouped by top customers (shows which customers drive sales in each plant)
+    4. Table with: Plant, Customer info, Order Quantity
+  * "Material and UPC details by location" → Generate:
+    1. Bar chart: Materials by Plant
+    2. Bar chart: UPCs by Plant  
+    3. GROUPED chart: Top Materials by Plant, showing UPC distribution
+    4. Table with: Plant, Material, UPC, Material Descrption
+
+**IMPORTANT for Multi-Level Charts:**
+- Use reasonable limits (5-10 items per dimension) to keep grouped charts readable
+- Choose appropriate chart: grouped bar for comparisons, stacked bar for composition
+- Include a color legend to distinguish the groups
+- Title should clearly indicate the multi-dimensional relationship
+
+**SINGLE DIMENSION QUERIES:**
+When the user asks for "based on [X]", "by [X]" with ONLY ONE dimension:
+- Generate ONE main chart showing that breakdown
+- PLUS one detail table
+- Example: "Order Quantity based UPC details" → ONE chart for UPC, ONE table
+
 Return JSON with:
 - charts: list of chart configurations, each with:
-  * type: "bar", "pie", "line", "scatter"
+  * type: "bar", "pie", "line", "scatter", "grouped_bar", "stacked_bar"
   * title: descriptive chart title
   * x_column: EXACT column name from data (for bar/line/scatter)
   * y_column: EXACT column name OR "count" for count aggregation
-  * group_by: EXACT column name (for pie charts)
+  * group_by: EXACT column name (for pie charts OR for grouping in multi-level bar charts)
+  * color_by: EXACT column name (for grouped/stacked bar charts - creates colored groups)
   * agg_function: "count", "sum", "mean", "max", "min"
-  * limit: number of top items to show (default 10)
+  * limit: number of top items to show (default 10, use 5-10 for grouped charts)
+  * limit_groups: number of groups/colors to show in grouped charts (default 5)
 - tables: list of table configurations with:
   * type: "table"
   * columns: list of EXACT column names from data
@@ -41,3 +78,51 @@ Example for "plant 1007 auth flag active":
     {{"type": "table", "columns": ["Material", "Material Descrption", "Order Quantity Sales Unit", "Auth Sell Flag Description"], "title": "Material Details", "limit": 50}}
   ]
 }}
+
+Example for "Order Quantity based UPC details" (SINGLE DIMENSION):
+{{
+  "charts": [
+    {{"type": "bar", "title": "Order Quantity by UPC", "x_column": "UPC", "y_column": "Order Quantity Sales Unit", "agg_function": "sum", "limit": 15}}
+  ],
+  "tables": [
+    {{"type": "table", "columns": ["UPC", "Material", "Material Descrption", "Order Quantity Sales Unit", "Plant"], "title": "UPC Details", "limit": 50}}
+  ]
+}}
+
+Example for "Order Quantity by UPC and Customer Hierarchy" (MULTIPLE DIMENSIONS with GROUPED CHART):
+{{
+  "charts": [
+    {{"type": "bar", "title": "Order Quantity by UPC", "x_column": "UPC", "y_column": "Order Quantity Sales Unit", "agg_function": "sum", "limit": 15}},
+    {{"type": "bar", "title": "Order Quantity by Customer Hierarchy", "x_column": "Customer Hierarchy Level 6 Text", "y_column": "Order Quantity Sales Unit", "agg_function": "sum", "limit": 15}},
+    {{"type": "grouped_bar", "title": "Order Quantity by UPC and Customer Hierarchy", "x_column": "UPC", "y_column": "Order Quantity Sales Unit", "color_by": "Customer Hierarchy Level 6 Text", "agg_function": "sum", "limit": 10, "limit_groups": 5}}
+  ],
+  "tables": [
+    {{"type": "table", "columns": ["UPC", "Customer Hierarchy Level 6 Text", "Sold-to Name", "Material Descrption", "Order Quantity Sales Unit", "Plant"], "title": "UPC and Customer Details", "limit": 50}}
+  ]
+}}
+
+Example for "Sales by plant" (SINGLE DIMENSION):
+{{
+  "charts": [
+    {{"type": "bar", "title": "Order Quantity by Plant", "x_column": "Plant", "y_column": "Order Quantity Sales Unit", "agg_function": "sum", "limit": 20}}
+  ],
+  "tables": [
+    {{"type": "table", "columns": ["Plant", "Location Description", "Order Quantity Sales Unit"], "title": "Plant Details", "limit": 50}}
+  ]
+}}
+
+Example for "Material and customer details by plant" (MULTIPLE DIMENSIONS with GROUPED CHART):
+{{
+  "charts": [
+    {{"type": "bar", "title": "Top Materials by Plant", "x_column": "Material Descrption", "y_column": "Order Quantity Sales Unit", "agg_function": "sum", "limit": 15}},
+    {{"type": "bar", "title": "Top Customers by Plant", "x_column": "Sold-to Name", "y_column": "Order Quantity Sales Unit", "agg_function": "sum", "limit": 15}},
+    {{"type": "grouped_bar", "title": "Materials by Plant and Customer", "x_column": "Plant", "y_column": "Order Quantity Sales Unit", "color_by": "Sold-to Name", "agg_function": "sum", "limit": 8, "limit_groups": 5}}
+  ],
+  "tables": [
+    {{"type": "table", "columns": ["Plant", "Material", "Material Descrption", "Sold-to Name", "Order Quantity Sales Unit"], "title": "Plant, Material and Customer Details", "limit": 50}}
+  ]
+}}
+
+User Query: {user_query}
+
+Generate appropriate visualizations:

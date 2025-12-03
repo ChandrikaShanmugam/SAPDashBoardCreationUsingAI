@@ -543,3 +543,33 @@ def validate_column_name(column_name, table="sales_order"):
         return column_name in A1P_LOCATION_SEQUENCE_COLUMNS
     return False
 
+
+def get_text_columns(table="sales_order"):
+    """Get all columns that should be loaded as text/string type
+    
+    This prevents numeric codes (UPC, Material, etc.) from being converted to floats.
+    Returns columns where type is 'text' from the schema.
+    
+    Args:
+        table: Either "sales_order" or "location_sequence" or "all"
+    
+    Returns:
+        List of column names that should be treated as strings
+    """
+    text_cols = []
+    
+    if table in ["sales_order", "all"]:
+        text_cols.extend([
+            col for col, meta in SALES_ORDER_EXCEPTION_SCHEMA.items() 
+            if meta.get("type") == "text"
+        ])
+    
+    if table in ["location_sequence", "all"]:
+        text_cols.extend([
+            col for col, meta in A1P_LOCATION_SEQUENCE_SCHEMA.items() 
+            if meta.get("type") == "text"
+        ])
+    
+    # Remove duplicates while preserving order
+    return list(dict.fromkeys(text_cols))
+

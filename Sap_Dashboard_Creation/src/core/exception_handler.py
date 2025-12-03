@@ -20,6 +20,7 @@ import re
 import logging
 from pathlib import Path
 from pepsico_llm import invoke_llm
+import database_schema as db_schema
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -39,10 +40,14 @@ def load_exception_csv(filepath: str = None) -> pd.DataFrame:
     if filepath is None:
         filepath = _get_default_csv_path()
     
+    # Get text columns from schema instead of hardcoding
+    string_columns = db_schema.get_text_columns(table="sales_order")
+    
     encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
     for encoding in encodings:
         try:
-            df = pd.read_csv(filepath, encoding=encoding, on_bad_lines='skip', engine='python')
+            df = pd.read_csv(filepath, encoding=encoding, on_bad_lines='skip', engine='python', 
+                           dtype={col: str for col in string_columns})
             logger.info(f"Loaded {len(df):,} rows from {filepath} using encoding {encoding}")
             return df
         except Exception:
