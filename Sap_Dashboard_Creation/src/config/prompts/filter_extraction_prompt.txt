@@ -15,6 +15,17 @@ Users often make typos, spelling mistakes, or use different cases. You MUST matc
 **TABLE RELATIONSHIPS:**
 {relationship_info}
 
+**NEW: COF INVENTORY TABLES**
+Two additional COF (Customer Order Fulfillment) inventory tables are now available:
+- Table 3: COF Inventory Net Price (7 columns)
+- Table 4: COF Inventory Net Price Material (7 columns - identical structure)
+
+These tables can be joined to Sales Order via:
+- Sold-To Party (Customer)
+- Material
+- UPC
+- Pespsi Invenid
+
 **IMPORTANT - CROSS-TABLE FILTERING:**
 When a user asks about data that spans both tables, you can use filters from BOTH tables:
 - The system automatically JOINs tables using: Plant (Sales Order) = Plant(Location) AND Material (Sales Order) = Material (Location)
@@ -27,14 +38,26 @@ When a user asks about data that spans both tables, you can use filters from BOT
   → {{"filters": {{"Plant": "1001", "Auth to sell flag": "N"}}}}  (Auth to sell flag is from Location table)
 
 **TABLE COLUMN REFERENCE:**
-Sales Order Table includes: Sales Order Number, Sold-To Party, Order Quantity Sales Unit, Material Status Description, Auth Sell Flag Description, Plant, Material, etc.
+Sales Order Table includes: Sales Order Number, Sold-To Party, Order Quantity Sales Unit, Material Status Description, Auth Sell Flag Description, Plant, Material, UPC, Pespsi Invenid, etc.
 Location Sequence Table includes: Inven Id, Inven Sequ Number, Inven Group Name, Location Id, Auth to sell flag, Plant(Location), Material, etc.
+COF Inventory Tables include: Sold-To Party, Sold-to Name, COF, Pespsi Invenid, UPC, Material, Material Descrption
 
 **TERMINOLOGY MAPPINGS** (User Language → Column Names):
 - "location" / "plant" / "facility" → "Plant"
-- "customer account" / "customer" / "sold-to" / "sold to party" → "Sold-To Party"
+- "customer account" / "customer" / "sold-to" / "sold to party" / "sold to name" / "customer name" → "Sold-To Party" or "Sold-to Name"
 - "material description" / "material desc" / "mat description" / "material descrption" / "descrption" → "Material Descrption" (note: actual column has typo)
 - "case qty" / "quantity" / "order quantity" / "qty" / "case quantity" → "Order Quantity Sales Unit"
+- "pricing" / "price" / "pricing details" / "condition amount" / "pricing info" → Requires COF Pricing table (Condition Amount, Condition Currency, Pricing Unit)
+
+**MATERIAL NUMBER NORMALIZATION** (CRITICAL):
+Material numbers can appear with or without leading zeros:
+- Full format: 000000000300008760 (18 digits)
+- Short format: 300008760 (no leading zeros)
+Both formats refer to the SAME material. When filtering:
+- Accept both formats from users
+- System will automatically normalize for matching
+- Examples: "300008760" matches "000000000300008760"
+- User may input either format - both are valid
 - "sales order" / "order" / "SO" / "order number" → "Sales Order Number"
 - "upc" / "universal product code" / "UPC code" → "UPC" or "EAN/UPC"
 - "gtin" / "global trade item number" → "GTIN"
@@ -238,10 +261,19 @@ Example queries with EXACT expected output:
    → {{"filters": {{"Plant": "1007"}}}}
    Note: User specified plant 1007, so we filter by it
 
+19. "Show data for material 300008760" (Material WITHOUT leading zeros)
+   → {{"filters": {{"Material": "300008760"}}}}
+   Note: System will normalize to match both 300008760 and 000000000300008760
+
+20. "Get orders for material 000000000300008760" (Material WITH leading zeros)
+   → {{"filters": {{"Material": "000000000300008760"}}}}
+   Note: System will normalize to match both formats
+
 **CROSS-TABLE QUERY DETECTION**:
-Set "requires_join": true and "join_on": ["Plant", "Material"] when filters include columns from BOTH:
-- Sales Order columns (Sales Order Number, Sold-To Party, Order Quantity, etc.) AND
-- Location Sequence columns (Inven Id, Inven Sequ Number, Inven Group Name, Location Id, etc.)
+Set "requires_join": true and "join_on": [appropriate columns] when filters include columns from multiple tables:
+- Sales Order + Location Sequence: join_on ["Plant", "Material"]
+- Sales Order + COF Inventory: join_on ["Sold-To Party", "Material"] OR ["UPC"] OR ["Pespsi Invenid"]
+- Multiple tables: include all relevant join columns
 
 User Query: {user_query}
 

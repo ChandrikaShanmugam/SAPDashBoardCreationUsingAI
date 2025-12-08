@@ -109,30 +109,42 @@ class PromptTemplateManager:
         """
         fk = ds.get_foreign_key_relationships()
         common_cols = ds.get_common_columns()
+        cof_cols = ds.get_cof_common_columns()
         
         info_parts = []
-        info_parts.append("Two tables are available:")
+        info_parts.append("Four tables are available:")
         info_parts.append("1. Sales Order Exception Report (69 columns) - Main sales order data")
         info_parts.append("2. A1P Location Sequence (15 columns) - Plant location and material sequence data")
+        info_parts.append("3. COF Inventory Net Price (7 columns) - Customer order fulfillment pricing data")
+        info_parts.append("4. COF Inventory Net Price Material (11 columns) - Material pricing conditions and amounts")
         info_parts.append("")
         info_parts.append("Tables can be joined using:")
-        info_parts.append(f"- Common columns: {', '.join(common_cols)}")
-        info_parts.append(f"- Join condition: Sales Order.Plant = Location.Plant(Location) AND Sales Order.Material = Location.Material")
+        info_parts.append(f"- Sales Order ↔ Location: {', '.join(common_cols)}")
+        info_parts.append(f"- Sales Order ↔ COF Inventory: {', '.join(cof_cols)}")
+        info_parts.append(f"- COF Inventory ↔ COF Material Pricing: Material")
         info_parts.append("")
         
+        # Sales Order to Location relationship
         relationship = fk.get("sales_order_to_location", {})
         if relationship:
             info_parts.append("Foreign Key Relationships:")
+            info_parts.append("[Sales Order → A1P Location]")
             for rel in relationship.get("relationships", []):
-                info_parts.append(f"- {rel['from_column']} (Sales Order) → {rel['to_column']} (Location) [{rel['relationship_type']}]")
+                info_parts.append(f"  - {rel['from_column']} → {rel['to_column']} [{rel['relationship_type']}]")
+        
+        # Sales Order to COF Inventory relationship
+        cof_relationship = fk.get("sales_order_to_cof_inventory", {})
+        if cof_relationship:
             info_parts.append("")
-            info_parts.append(f"Description: {relationship.get('description', 'N/A')}")
+            info_parts.append("[Sales Order → COF Inventory]")
+            for rel in cof_relationship.get("relationships", []):
+                info_parts.append(f"  - {rel['from_column']} → {rel['to_column']} [{rel['relationship_type']}]")
         
         return "\n".join(info_parts)
     
     def get_columns_info(self) -> str:
         """
-        Get formatted column information for both tables
+        Get formatted column information for all tables
         
         Returns:
             Formatted string with column information
@@ -151,6 +163,20 @@ class PromptTemplateManager:
         loc_cols = ds.get_all_location_sequence_columns()
         info_parts.append(f"Total: {len(loc_cols)} columns")
         info_parts.append(f"All columns: {', '.join(loc_cols)}")
+        info_parts.append("")
+        
+        # COF Inventory columns
+        info_parts.append("COF INVENTORY NET PRICE COLUMNS:")
+        cof_cols = ds.get_all_cof_inventory_columns()
+        info_parts.append(f"Total: {len(cof_cols)} columns")
+        info_parts.append(f"All columns: {', '.join(cof_cols)}")
+        info_parts.append("")
+        
+        # COF Material columns
+        info_parts.append("COF INVENTORY NET PRICE MATERIAL COLUMNS (Material Pricing):")
+        cof_mat_cols = ds.get_all_cof_material_columns()
+        info_parts.append(f"Total: {len(cof_mat_cols)} columns")
+        info_parts.append(f"All columns: {', '.join(cof_mat_cols)}")
         
         return "\n".join(info_parts)
     

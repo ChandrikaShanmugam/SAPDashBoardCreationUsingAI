@@ -101,6 +101,32 @@ A1P_LOCATION_SEQUENCE_COLUMNS = [
     "Time of change"
 ]
 
+# Table 3: COF Inventory Net Price
+COF_INVEN_NET_PRICE_COLUMNS = [
+    "Sold-To Party",
+    "Sold-to Name",
+    "COF",
+    "Pespsi Invenid",
+    "UPC",
+    "Material",
+    "Material Descrption"
+]
+
+# Table 4: COF Inventory Net Price Material (Material Pricing Data)
+COF_INVEN_NETPRICE_MATERIAL_COLUMNS = [
+    "Sales Organization",
+    "Distribution Channel",
+    "Condition Type",
+    "Condition Record No.",
+    "Material",
+    "Condition Amount",
+    "Condition Currency",
+    "Pricing Unit",
+    "Unit of Measure",
+    "Valid From",
+    "Valid To"
+]
+
 # Foreign Key Relationships
 FOREIGN_KEY_RELATIONSHIPS = {
     "sales_order_to_location": {
@@ -122,6 +148,52 @@ FOREIGN_KEY_RELATIONSHIPS = {
         ],
         "composite_key": ["Plant", "Material"],
         "description": "Sales orders can be linked to location sequences via Plant and Material combination"
+    },
+    "sales_order_to_cof_inventory": {
+        "from_table": "Sales Order Exception Report",
+        "to_table": "COF Inventory Net Price",
+        "relationships": [
+            {
+                "from_column": "Sold-To Party",
+                "to_column": "Sold-To Party",
+                "relationship_type": "many-to-one",
+                "description": "Links sales orders to customer COF inventory pricing"
+            },
+            {
+                "from_column": "Material",
+                "to_column": "Material",
+                "relationship_type": "many-to-one",
+                "description": "Links sales order materials to COF inventory pricing"
+            },
+            {
+                "from_column": "UPC",
+                "to_column": "UPC",
+                "relationship_type": "many-to-one",
+                "description": "Links via UPC code to COF inventory pricing"
+            },
+            {
+                "from_column": "Pespsi Invenid",
+                "to_column": "Pespsi Invenid",
+                "relationship_type": "many-to-one",
+                "description": "Links via PepsiCo Inventory ID to COF pricing"
+            }
+        ],
+        "composite_key": ["Sold-To Party", "Material"],
+        "description": "Sales orders can be linked to COF inventory pricing via customer and material combination"
+    },
+    "cof_inventory_to_material": {
+        "from_table": "COF Inventory Net Price",
+        "to_table": "COF Inventory Net Price Material",
+        "relationships": [
+            {
+                "from_column": "Material",
+                "to_column": "Material",
+                "relationship_type": "many-to-one",
+                "description": "Material reference for pricing lookup"
+            }
+        ],
+        "composite_key": ["Sales Organization", "Distribution Channel", "Material"],
+        "description": "COF Inventory links to Material Pricing via Material number for condition amounts and pricing units"
     }
 }
 
@@ -144,7 +216,7 @@ SALES_ORDER_EXCEPTION_SCHEMA = {
     "Sales Line Item Status": {"type": "text", "description": "Status of the line item"},
     "Reason for Rejection": {"type": "text", "description": "Rejection reason code"},
     "Reason for Rejection Description ": {"type": "text", "description": "Rejection reason description"},
-    "Material": {"type": "text", "foreign_key": True, "description": "Material number/code"},
+    "Material": {"type": "text", "foreign_key": True, "description": "Material number/code (may have leading zeros, e.g., 000000000300008760 or 300008760)"},
     "Material Descrption": {"type": "text", "description": "Material name/description"},
     "Material Status": {"type": "text", "description": "Material status code"},
     "Material Status Description": {"type": "text", "description": "Material status description"},
@@ -215,6 +287,32 @@ A1P_LOCATION_SEQUENCE_SCHEMA = {
     "Changed By": {"type": "text", "description": "User who last changed the record"},
     "Changed On": {"type": "date", "description": "Last change date"},
     "Time of change": {"type": "time", "description": "Last change time"}
+}
+
+# Table Metadata for COF Inventory Net Price
+COF_INVEN_NET_PRICE_SCHEMA = {
+    "Sold-To Party": {"type": "text", "primary_key": True, "foreign_key_target": True, "description": "Customer ID/account number"},
+    "Sold-to Name": {"type": "text", "description": "Customer name"},
+    "COF": {"type": "text", "primary_key": True, "description": "COF (Customer Order Fulfillment) identifier"},
+    "Pespsi Invenid": {"type": "text", "foreign_key_target": True, "description": "PepsiCo Inventory ID"},
+    "UPC": {"type": "text", "foreign_key_target": True, "description": "Universal Product Code"},
+    "Material": {"type": "text", "primary_key": True, "foreign_key_target": True, "description": "Material number/code"},
+    "Material Descrption": {"type": "text", "description": "Material name/description"}
+}
+
+# Table Metadata for COF Inventory Net Price Material (Material Pricing)
+COF_INVEN_NETPRICE_MATERIAL_SCHEMA = {
+    "Sales Organization": {"type": "text", "primary_key": True, "description": "Sales organization code"},
+    "Distribution Channel": {"type": "text", "primary_key": True, "description": "Distribution channel code"},
+    "Condition Type": {"type": "text", "description": "Pricing condition type"},
+    "Condition Record No.": {"type": "text", "description": "Unique condition record identifier"},
+    "Material": {"type": "text", "primary_key": True, "foreign_key_target": True, "description": "Material number/code (normalize by removing leading zeros for matching)"},
+    "Condition Amount": {"type": "numeric", "description": "Pricing condition amount/value"},
+    "Condition Currency": {"type": "text", "description": "Currency code for condition amount"},
+    "Pricing Unit": {"type": "numeric", "description": "Pricing unit quantity"},
+    "Unit of Measure": {"type": "text", "description": "Unit of measure for pricing"},
+    "Valid From": {"type": "date", "description": "Pricing validity start date"},
+    "Valid To": {"type": "date", "description": "Pricing validity end date"}
 }
 
 
@@ -389,6 +487,16 @@ def get_all_location_sequence_columns():
     return A1P_LOCATION_SEQUENCE_COLUMNS.copy()
 
 
+def get_all_cof_inventory_columns():
+    """Get list of all COF Inventory Net Price column names"""
+    return COF_INVEN_NET_PRICE_COLUMNS.copy()
+
+
+def get_all_cof_material_columns():
+    """Get list of all COF Inventory Net Price Material column names"""
+    return COF_INVEN_NETPRICE_MATERIAL_COLUMNS.copy()
+
+
 def get_foreign_key_relationships():
     """Get foreign key relationship definitions"""
     return FOREIGN_KEY_RELATIONSHIPS
@@ -399,31 +507,61 @@ def get_common_columns():
     return ["Plant", "Material"]
 
 
+def get_cof_common_columns():
+    """Get columns common across COF inventory tables and Sales Order table"""
+    return ["Material"]  # Only Material is common between all COF tables and Sales Order
+
+
 def generate_relationship_diagram():
     """Generate ASCII diagram showing table relationships"""
     diagram = """
-    ┌─────────────────────────────────────┐
-    │  Sales Order Exception Report       │
-    │─────────────────────────────────────│
-    │  * Sales Order Number (PK)          │
-    │    Plant (FK) ────────────┐         │
-    │    Material (FK) ─────────┼────┐    │
-    │    ... other columns      │    │    │
-    └───────────────────────────┘    │    │
-                                     │    │
-    ┌────────────────────────────────┼────┼───┐
-    │  A1P Location Sequence         │    │   │
-    │────────────────────────────────┼────┼───│
-    │  * Plant(Location) (PK) ◄──────┘    │   │
-    │  * Material (PK) ◄──────────────────┘   │
-    │    Inven Id                              │
-    │    ... other columns                     │
-    └──────────────────────────────────────────┘
+    ┌─────────────────────────────────────────────────┐
+    │  Sales Order Exception Report                   │
+    │─────────────────────────────────────────────────│
+    │  * Sales Order Number (PK)                      │
+    │    Plant (FK) ────────────┐                     │
+    │    Material (FK) ─────────┼──────┐              │
+    │    Sold-To Party (FK) ────┼──────┼───┐          │
+    │    UPC (FK) ──────────────┼──────┼───┼───┐      │
+    │    Pespsi Invenid (FK) ───┼──────┼───┼───┼─┐    │
+    │    ... other columns      │      │   │   │ │    │
+    └───────────────────────────┘      │   │   │ │    │
+                                       │   │   │ │    │
+    ┌──────────────────────────────────┼───┼───┘ │    │
+    │  A1P Location Sequence           │   │     │    │
+    │──────────────────────────────────┼───┼─────┼────┼──┐
+    │  * Plant(Location) (PK) ◄────────┘   │     │    │  │
+    │  * Material (PK) ◄───────────────────┘     │    │  │
+    │    Inven Id                                │    │  │
+    │    ... other columns                       │    │  │
+    └────────────────────────────────────────────┼────┼──┘
+                                                 │    │
+    ┌────────────────────────────────────────────┼────┼──────┐
+    │  COF Inventory Net Price                   │    │      │
+    │────────────────────────────────────────────┼────┼──────│
+    │  * Sold-To Party (PK) ◄────────────────────┘    │      │
+    │  * Material (PK)                                │      │
+    │  * COF (PK)                                     │      │
+    │    UPC ◄────────────────────────────────────────┘      │
+    │    Pespsi Invenid ◄────────────────────────────────────┘
+    │    ... other columns                                   │
+    └────────────────────────────────────────────────────────┘
+            ║ (identical structure)
+            ║
+    ┌───────╩────────────────────────────────────────────────┐
+    │  COF Inventory Net Price Material                      │
+    │────────────────────────────────────────────────────────│
+    │  * Sold-To Party (PK)                                  │
+    │  * Material (PK)                                       │
+    │  * COF (PK)                                            │
+    │    UPC, Pespsi Invenid                                 │
+    │    ... other columns                                   │
+    └────────────────────────────────────────────────────────┘
     
-    Relationship:
-    - Plant (Sales Order) → Plant(Location) (A1P Location)
-    - Material (Sales Order) → Material (A1P Location)
-    - Composite Foreign Key: (Plant, Material)
+    Relationships:
+    1. Sales Order → A1P Location: (Plant, Material)
+    2. Sales Order → COF Inventory: (Sold-To Party, Material, UPC, Pespsi Invenid)
+    3. COF Net Price ↔ COF Material: Identical structure (one-to-one mapping)
     """
     return diagram
 
@@ -433,8 +571,14 @@ def generate_relationship_diagram():
 # ==============================================================================
 
 def get_all_columns():
-    """Get list of all column names (backward compatible - returns Sales Order columns)"""
-    return SALES_ORDER_EXCEPTION_COLUMNS.copy()
+    """Get list of all column names from all 4 tables"""
+    all_cols = []
+    all_cols.extend(SALES_ORDER_EXCEPTION_COLUMNS)
+    all_cols.extend(A1P_LOCATION_SEQUENCE_COLUMNS)
+    all_cols.extend(COF_INVEN_NET_PRICE_COLUMNS)
+    all_cols.extend(COF_INVEN_NETPRICE_MATERIAL_COLUMNS)
+    # Return unique columns (in case of duplicates like 'Material')
+    return list(dict.fromkeys(all_cols))
 
 
 def get_filterable_columns():
@@ -482,6 +626,30 @@ def generate_schema_prompt():
         prompt_parts.append(f"  Type: {col_info.get('type', 'text')}")
         prompt_parts.append(f"  Description: {col_info.get('description', 'N/A')}")
     
+    # COF Inventory Net Price Schema
+    prompt_parts.append("\n\n" + "=" * 80)
+    prompt_parts.append("TABLE 3: COF Inventory Net Price")
+    prompt_parts.append("=" * 80)
+    for col in COF_INVEN_NET_PRICE_COLUMNS:
+        col_info = COF_INVEN_NET_PRICE_SCHEMA.get(col, {})
+        pk = " [PRIMARY KEY]" if col_info.get("primary_key") else ""
+        fk_target = " [FK TARGET]" if col_info.get("foreign_key_target") else ""
+        prompt_parts.append(f"\n• {col}{pk}{fk_target}")
+        prompt_parts.append(f"  Type: {col_info.get('type', 'text')}")
+        prompt_parts.append(f"  Description: {col_info.get('description', 'N/A')}")
+    
+    # COF Inventory Net Price Material Schema
+    prompt_parts.append("\n\n" + "=" * 80)
+    prompt_parts.append("TABLE 4: COF Inventory Net Price Material")
+    prompt_parts.append("=" * 80)
+    for col in COF_INVEN_NETPRICE_MATERIAL_COLUMNS:
+        col_info = COF_INVEN_NETPRICE_MATERIAL_SCHEMA.get(col, {})
+        pk = " [PRIMARY KEY]" if col_info.get("primary_key") else ""
+        fk_target = " [FK TARGET]" if col_info.get("foreign_key_target") else ""
+        prompt_parts.append(f"\n• {col}{pk}{fk_target}")
+        prompt_parts.append(f"  Type: {col_info.get('type', 'text')}")
+        prompt_parts.append(f"  Description: {col_info.get('description', 'N/A')}")
+    
     # Relationship Information
     prompt_parts.append("\n\n" + "=" * 80)
     prompt_parts.append("FOREIGN KEY RELATIONSHIPS")
@@ -521,12 +689,16 @@ def get_column_type(column_name, table="sales_order"):
     
     Args:
         column_name: Name of the column
-        table: Either "sales_order" or "location_sequence"
+        table: Either "sales_order", "location_sequence", "cof_inventory", or "cof_material"
     """
     if table == "sales_order":
         return SALES_ORDER_EXCEPTION_SCHEMA.get(column_name, {}).get("type", "text")
     elif table == "location_sequence":
         return A1P_LOCATION_SEQUENCE_SCHEMA.get(column_name, {}).get("type", "text")
+    elif table == "cof_inventory":
+        return COF_INVEN_NET_PRICE_SCHEMA.get(column_name, {}).get("type", "text")
+    elif table == "cof_material":
+        return COF_INVEN_NETPRICE_MATERIAL_SCHEMA.get(column_name, {}).get("type", "text")
     return "text"
 
 
@@ -535,12 +707,16 @@ def validate_column_name(column_name, table="sales_order"):
     
     Args:
         column_name: Name of the column to validate
-        table: Either "sales_order" or "location_sequence"
+        table: Either "sales_order", "location_sequence", "cof_inventory", or "cof_material"
     """
     if table == "sales_order":
         return column_name in SALES_ORDER_EXCEPTION_COLUMNS
     elif table == "location_sequence":
         return column_name in A1P_LOCATION_SEQUENCE_COLUMNS
+    elif table == "cof_inventory":
+        return column_name in COF_INVEN_NET_PRICE_COLUMNS
+    elif table == "cof_material":
+        return column_name in COF_INVEN_NETPRICE_MATERIAL_COLUMNS
     return False
 
 
@@ -551,7 +727,7 @@ def get_text_columns(table="sales_order"):
     Returns columns where type is 'text' from the schema.
     
     Args:
-        table: Either "sales_order" or "location_sequence" or "all"
+        table: Either "sales_order", "location_sequence", "cof_inventory", "cof_material", or "all"
     
     Returns:
         List of column names that should be treated as strings
@@ -570,6 +746,69 @@ def get_text_columns(table="sales_order"):
             if meta.get("type") == "text"
         ])
     
+    if table in ["cof_inventory", "all"]:
+        text_cols.extend([
+            col for col, meta in COF_INVEN_NET_PRICE_SCHEMA.items() 
+            if meta.get("type") == "text"
+        ])
+    
+    if table in ["cof_material", "all"]:
+        text_cols.extend([
+            col for col, meta in COF_INVEN_NETPRICE_MATERIAL_SCHEMA.items() 
+            if meta.get("type") == "text"
+        ])
+    
     # Remove duplicates while preserving order
     return list(dict.fromkeys(text_cols))
+
+
+def normalize_material_number(material: str) -> str:
+    """
+    Normalize material number by removing leading zeros
+    
+    Material numbers can appear in different formats:
+    - Full: 000000000300008760 (18 digits with leading zeros)
+    - Short: 300008760 (without leading zeros)
+    
+    This function standardizes to the short format for comparison.
+    
+    Args:
+        material: Material number string (with or without leading zeros)
+    
+    Returns:
+        Normalized material number without leading zeros
+    
+    Examples:
+        normalize_material_number("000000000300008760") -> "300008760"
+        normalize_material_number("300008760") -> "300008760"
+    """
+    if not material:
+        return material
+    
+    # Convert to string and strip whitespace
+    material_str = str(material).strip()
+    
+    # Remove leading zeros but keep at least one digit
+    normalized = material_str.lstrip('0') or '0'
+    
+    return normalized
+
+
+def materials_match(material1: str, material2: str) -> bool:
+    """
+    Check if two material numbers match after normalization
+    
+    Args:
+        material1: First material number
+        material2: Second material number
+    
+    Returns:
+        True if materials match after normalization
+    
+    Examples:
+        materials_match("000000000300008760", "300008760") -> True
+        materials_match("300008760", "300008760") -> True
+        materials_match("300008760", "300009428") -> False
+    """
+    return normalize_material_number(material1) == normalize_material_number(material2)
 

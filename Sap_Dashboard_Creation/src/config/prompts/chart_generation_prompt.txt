@@ -3,17 +3,38 @@ You are a data visualization expert. Based on the user's ORIGINAL query and the 
 Filtered Data Sample:
 {data_sample}
 
-**FUZZY COLUMN MATCHING** (CRITICAL):
-Users may use typos, different cases, or abbreviations in their query. You MUST intelligently map to actual column names:
-- IGNORE case: "material description" → "Material Descrption"
-- IGNORE spacing: "caseqty" or "case qty" → "Order Quantity Sales Unit"
-- HANDLE typos: "descrption" / "descripton" → "Material Descrption" (actual column has typo)
-- HANDLE abbreviations: "qty" → "Order Quantity Sales Unit", "desc" → "Descrption"
-- PARTIAL matches: "customer" could mean "Sold-To Party", "customer hierarchy" could mean "Customer Hierarchy Level 6 Text"
-- USE context: "failure material description" → Show "Material Descrption" column for records with Auth issues
+**CRITICAL INSTRUCTION - USE ONLY COLUMNS FROM DATA SAMPLE:**
+The data_sample above contains a "columns" field listing ALL available columns in the filtered dataset.
+You MUST ONLY use column names that appear in that exact list. DO NOT invent or guess column names.
 
-CRITICAL: You MUST use EXACT column names from this list:
+**AVAILABLE COLUMNS IN THIS DATA:**
 {all_columns}
+
+**COLUMN NAME MAPPING RULES:**
+When the user's query mentions fields using different words, map them to the EXACT column names above:
+- "quantity" / "qty" / "case qty" / "order quantity" → "Order Quantity Sales Unit"
+- "material description" / "material desc" / "mat desc" → "Material Descrption" (note the typo in actual column)
+- "plant" / "location" / "facility" → "Plant" or "Location Description"
+- "customer" / "sold to" / "customer name" → "Sold-To Party" or "Sold-to Name"
+- "upc" / "universal product code" → "UPC"
+- "price" / "pricing" / "cost" → "Condition Amount" (if available in COF data)
+
+**FUZZY MATCHING RULES:**
+- IGNORE case differences: "material" matches "Material"
+- IGNORE typos: User types "description" but actual column is "Descrption"
+- IGNORE abbreviations: "qty" means quantity columns
+- USE context: If user asks for "sales by UPC", the y_column should be "Order Quantity Sales Unit"
+
+**NEW: COF INVENTORY DATA AVAILABLE**
+You now have access to COF (Customer Order Fulfillment) inventory pricing data:
+- COF Inventory tables link to Sales Orders via: Sold-To Party, Material, UPC, Pespsi Invenid
+- Use for customer-specific pricing analysis and inventory correlation
+- COF column uniquely identifies customer order fulfillment records
+- **PRICING COLUMNS**: When user asks for "pricing" or "price details", use these columns:
+  * "Condition Amount" - The actual price/cost value (use for y-axis in charts)
+  * "Condition Currency" - Currency code (USD, EUR, etc.)
+  * "Pricing Unit" - Unit of pricing (use for context)
+  * "Material Descrption" or "Material" - For x-axis grouping
 
 Commonly used columns for charts:
 - Bar charts: {bar_chart_columns}

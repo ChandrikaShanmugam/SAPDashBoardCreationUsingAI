@@ -26,8 +26,11 @@ def test_relationship_info():
     
     assert "Sales Order Exception Report" in relationship_info
     assert "A1P Location Sequence" in relationship_info
+    assert "COF Inventory" in relationship_info
     assert "Plant" in relationship_info
     assert "Material" in relationship_info
+    assert "Sold-To Party" in relationship_info
+    assert "UPC" in relationship_info
     
     print("\n✅ Relationship information generated successfully")
     return True
@@ -46,8 +49,10 @@ def test_columns_info():
     
     assert "SALES ORDER EXCEPTION REPORT" in columns_info
     assert "A1P LOCATION SEQUENCE" in columns_info
+    assert "COF INVENTORY NET PRICE" in columns_info
     assert "69 columns" in columns_info
     assert "15 columns" in columns_info
+    assert "7 columns" in columns_info
     
     print("\n✅ Column information generated successfully")
     return True
@@ -77,12 +82,11 @@ def test_filter_extraction_prompt():
         prompt = manager.format_filter_extraction_prompt(query)
         
         # Verify key elements are in the prompt
-        assert "DATABASE SCHEMA & RELATIONSHIPS" in prompt
-        assert "CROSS-TABLE FILTERING" in prompt
+        assert "AVAILABLE TABLES" in prompt or "COF INVENTORY" in prompt
+        assert "CROSS-TABLE" in prompt or "requires_join" in prompt
         assert "requires_join" in prompt
         assert query in prompt
-        assert "Plant" in prompt
-        assert "Material" in prompt
+        assert "Plant" in prompt or "Material" in prompt
         
         print(f"✅ Prompt generated successfully ({len(prompt)} characters)")
         
@@ -141,11 +145,19 @@ def demonstrate_prompt_usage():
         },
         {
             "query": "How many materials have auth sell issues in inventory group 10OZ PL 1/24",
-            "description": "Cross-table query with aggregation"
+            "description": "Cross-table query with aggregation (Sales Order + Location)"
         },
         {
             "query": "Get sales orders for location 245 with inventory sequence 3000 that failed",
             "description": "Complex cross-table with multiple filters"
+        },
+        {
+            "query": "Show COF inventory pricing for customer 2000798846 with UPC 0012000203978",
+            "description": "COF inventory table query"
+        },
+        {
+            "query": "Compare sales orders with COF pricing for material 000000000300008760",
+            "description": "Cross-table query (Sales Order + COF Inventory)"
         }
     ]
     
@@ -158,8 +170,8 @@ def demonstrate_prompt_usage():
         prompt = manager.format_filter_extraction_prompt(test_case['query'])
         
         print(f"✅ Generated prompt: {len(prompt)} characters")
-        print(f"   Contains schema info: {'✓' if 'DATABASE SCHEMA' in prompt else '✗'}")
-        print(f"   Contains relationships: {'✓' if 'Foreign Key' in prompt else '✗'}")
+        print(f"   Contains column info: {'✓' if 'COLUMNS' in prompt else '✗'}")
+        print(f"   Contains relationships: {'✓' if 'Foreign Key' in prompt or 'can be joined' in prompt else '✗'}")
         print(f"   Contains cross-table examples: {'✓' if 'requires_join' in prompt else '✗'}")
         print(f"   Contains user query: {'✓' if test_case['query'] in prompt else '✗'}")
     

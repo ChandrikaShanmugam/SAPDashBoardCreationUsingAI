@@ -15,6 +15,7 @@ from pepsico_llm import invoke_llm
 import database_schema as db_schema
 import json
 import logging
+import difflib
 import time
 from datetime import datetime
 import sys
@@ -46,9 +47,9 @@ logger = logging.getLogger(__name__)
 
 @st.cache_data
 def load_sap_data():
-    """Load all SAP data files"""
+    """Load all SAP data files including COF inventory tables"""
     logger.info("=" * 80)
-    logger.info("LOADING SAP DATA FILES")
+    logger.info("LOADING SAP DATA FILES (4 TABLES)")
     logger.info("=" * 80)
     start_time = time.time()
     
@@ -106,7 +107,7 @@ def load_sap_data():
         if 'Material' in exception_report.columns:
             logger.info("Normalizing Material numbers in exception report (removing leading zeros)")
             exception_report['Material_Original'] = exception_report['Material'].copy()
-            exception_report['Material'] = exception_report['Material'].astype(str).str.lstrip('0').replace('', '0')
+            exception_report['Material'] = exception_report['Material'].astype(str).str.split('.').str[0].str.lstrip('0').replace('', '0')
             logger.info(f"  Sample normalized: {exception_report[['Material_Original', 'Material']].head(3).to_dict()}")
 
         # Use exception_report as the primary exceptions data
@@ -124,7 +125,7 @@ def load_sap_data():
         if 'Material' in location_sequence.columns:
             logger.info("Normalizing Material numbers in location sequence (removing leading zeros)")
             location_sequence['Material_Original'] = location_sequence['Material'].copy()
-            location_sequence['Material'] = location_sequence['Material'].astype(str).str.lstrip('0').replace('', '0')
+            location_sequence['Material'] = location_sequence['Material'].astype(str).str.split('.').str[0].str.lstrip('0').replace('', '0')
             logger.info(f"  Sample normalized: {location_sequence[['Material_Original', 'Material']].head(3).to_dict()}")
         
         # Verify foreign key columns exist
@@ -139,13 +140,43 @@ def load_sap_data():
         else:
             logger.warning("⚠️ Foreign key columns not found in one or both tables")
         
+        # Load COF Inventory Net Price (Table 3)
+        logger.info("Loading: Cof_Inven_NetPrice_Material.csv")
+        cof_inventory_file = str(data_dir / 'Cof_Inven_NetPrice_Material.csv')
+        cof_inventory = load_csv_with_encoding(cof_inventory_file)
+        logger.info(f"✓ Loaded {len(cof_inventory):,} records from COF Inventory Net Price")
+        logger.info(f"  Columns: {len(cof_inventory.columns)}")
+        
+        # Normalize Material numbers in COF inventory (strip leading zeros)
+        if 'Material' in cof_inventory.columns:
+            logger.info("Normalizing Material numbers in COF inventory (removing leading zeros)")
+            cof_inventory['Material_Original'] = cof_inventory['Material'].copy()
+            cof_inventory['Material'] = cof_inventory['Material'].astype(str).str.split('.').str[0].str.lstrip('0').replace('', '0')
+            logger.info(f"  Sample normalized: {cof_inventory[['Material_Original', 'Material']].head(3).to_dict()}")
+        
+        # Load COF Material Pricing (Table 4)
+        logger.info("Loading: Cof_Inven_NetPrice_MaterialPrice.csv")
+        cof_pricing_file = str(data_dir / 'Cof_Inven_NetPrice_MaterialPrice.csv')
+        cof_pricing = load_csv_with_encoding(cof_pricing_file)
+        logger.info(f"✓ Loaded {len(cof_pricing):,} records from COF Material Pricing")
+        logger.info(f"  Columns: {len(cof_pricing.columns)}")
+        
+        # Normalize Material numbers in COF pricing (strip leading zeros)
+        if 'Material' in cof_pricing.columns:
+            logger.info("Normalizing Material numbers in COF pricing (removing leading zeros)")
+            cof_pricing['Material_Original'] = cof_pricing['Material'].copy()
+            cof_pricing['Material'] = cof_pricing['Material'].astype(str).str.split('.').str[0].str.lstrip('0').replace('', '0')
+            logger.info(f"  Sample normalized: {cof_pricing[['Material_Original', 'Material']].head(3).to_dict()}")
+        
         elapsed = time.time() - start_time
         logger.info(f"✓ All data loaded successfully in {elapsed:.2f} seconds")
         logger.info("=" * 80)
         
         data = {
             'exception_report': exception_report,
-            'location_sequence': location_sequence
+            'location_sequence': location_sequence,
+            'cof_inventory': cof_inventory,
+            'cof_pricing': cof_pricing
         }
         return data
         
@@ -244,6 +275,54 @@ Example:
 """),
             ("user", "{query}")
         ])
+
+    def _map_column_name(self, requested: str, available_columns: List[str], cutoff: float = 0.7) -> str:
+        """Map a possibly-misspelled or user-friendly column name to an actual column.
+
+        Uses difflib.get_close_matches to find a candidate column name.
+        Returns the matched column name or None if no good match found.
+        """
+        if not requested:
+            return None
+
+        # Exact match quick path
+        if requested in available_columns:
+            return requested
+
+        # Normalize: strip, lower
+        req = requested.strip().lower()
+        candidates = {col: col.lower() for col in available_columns}
+
+        # Direct lower-case match
+        for col, low in candidates.items():
+            if low == req:
+                return col
+
+        # Fuzzy match on words / close string similarity
+        close = difflib.get_close_matches(req, list(candidates.values()), n=1, cutoff=cutoff)
+        if close:
+            # find original column name for matched lower string
+            for col, low in candidates.items():
+                if low == close[0]:
+                    logger.info(f"Mapped requested column '{requested}' → '{col}' using fuzzy match")
+                    return col
+
+        # Try token-based matching (e.g., 'description' -> 'descrption')
+        req_tokens = set(req.replace('/', ' ').replace('-', ' ').split())
+        best = None
+        best_score = 0
+        for col in available_columns:
+            col_tokens = set(col.lower().replace('/', ' ').replace('-', ' ').split())
+            score = len(req_tokens & col_tokens) / max(1, len(req_tokens | col_tokens))
+            if score > best_score:
+                best_score = score
+                best = col
+
+        if best_score >= 0.5:
+            logger.info(f"Mapped requested column '{requested}' → '{best}' using token overlap (score={best_score:.2f})")
+            return best
+
+        return None
     
     def classify(self, query: str) -> Dict:
         """Extract filters from user query - STAGE 1"""
@@ -386,19 +465,34 @@ Example:
             else:
                 logger.info("Using Pepsico LLM API as fallback for chart recommendations...")
                 
-                # Get chart columns from database schema
-                chart_columns = db_schema.get_common_chart_columns()
-                all_cols = ', '.join(db_schema.get_all_columns())
+                # CRITICAL: Use columns from ACTUAL filtered data, not schema
+                # This ensures LLM only references columns that exist in this specific dataset
+                actual_columns = filtered_data.columns.tolist()
+                all_cols = ', '.join(actual_columns)
                 
-                # Format the chart prompt with dynamic columns
+                logger.info(f"Filtered data has {len(actual_columns)} columns:")
+                logger.info(f"  Available columns: {all_cols[:200]}...")  # Show first 200 chars
+                
+                # Get chart columns from database schema as guidance
+                chart_columns = db_schema.get_common_chart_columns()
+                
+                # Filter chart column suggestions to only include those in actual data
+                bar_chart_cols = [c for c in chart_columns['for_bar_charts'] if c in actual_columns]
+                pie_chart_cols = [c for c in chart_columns['for_pie_charts'] if c in actual_columns]
+                agg_cols = [c for c in chart_columns['for_aggregation'] if c in actual_columns]
+                detail_cols = [c for c in chart_columns['for_details'] if c in actual_columns]
+                
+                logger.info(f"  Aggregation columns available: {', '.join(agg_cols) if agg_cols else 'NONE'}")
+                
+                # Format the chart prompt with dynamic columns from ACTUAL data
                 formatted_system_prompt = self.prompt_manager.format_template(
                     'chart_generation',
                     data_sample=json.dumps(data_sample, indent=2),
                     all_columns=all_cols,
-                    bar_chart_columns=', '.join(chart_columns['for_bar_charts']),
-                    pie_chart_columns=', '.join(chart_columns['for_pie_charts']),
-                    aggregation_columns=', '.join(chart_columns['for_aggregation']),
-                    detail_columns=', '.join(chart_columns['for_details'])
+                    bar_chart_columns=', '.join(bar_chart_cols) if bar_chart_cols else all_cols,
+                    pie_chart_columns=', '.join(pie_chart_cols) if pie_chart_cols else all_cols,
+                    aggregation_columns=', '.join(agg_cols) if agg_cols else 'Order Quantity Sales Unit',
+                    detail_columns=', '.join(detail_cols) if detail_cols else ', '.join(actual_columns[:10])
                 )
                 
                 payload = {
@@ -449,6 +543,23 @@ Example:
                     group_by = chart.get('group_by')
                     
                     # Check if columns are None or not in data
+                    # Map fuzzy column names to actual columns when possible
+                    if x_col:
+                        mapped_x = self._map_column_name(x_col, filtered_data.columns.tolist())
+                        if mapped_x:
+                            chart['x_column'] = mapped_x
+                            x_col = mapped_x
+                    if y_col:
+                        mapped_y = self._map_column_name(y_col, filtered_data.columns.tolist())
+                        if mapped_y:
+                            chart['y_column'] = mapped_y
+                            y_col = mapped_y
+                    if group_by:
+                        mapped_g = self._map_column_name(group_by, filtered_data.columns.tolist())
+                        if mapped_g:
+                            chart['group_by'] = mapped_g
+                            group_by = mapped_g
+
                     if chart.get('type') == 'bar':
                         if x_col and x_col in filtered_data.columns:
                             valid_charts.append(chart)
@@ -556,7 +667,18 @@ class DashboardGenerator:
         logger.info(f"Applying filters: {filters}")
         
         for col, value in filters.items():
-            if col in filtered_df.columns:
+            # Try to map fuzzy column names to actual dataframe columns (use classifier helper if available)
+            mapped_col = None
+            try:
+                if hasattr(self, 'classifier') and self.classifier is not None:
+                    mapped_col = self.classifier._map_column_name(col, filtered_df.columns.tolist())
+                else:
+                    mapped_col = None
+            except Exception:
+                mapped_col = None
+            use_col = mapped_col if mapped_col else col
+
+            if use_col in filtered_df.columns:
                 # Handle both single values and lists
                 if isinstance(value, list):
                     # For lists, use .isin() to match any value in the list
@@ -565,10 +687,10 @@ class DashboardGenerator:
                     logger.info(f"  ✓ Filtered by {col} in {value}, remaining rows: {len(filtered_df)}")
                 else:
                     # For single values, use equality comparison
-                    filtered_df = filtered_df[filtered_df[col].astype(str) == str(value)]
-                    logger.info(f"  ✓ Filtered by {col} = {value}, remaining rows: {len(filtered_df)}")
+                    filtered_df = filtered_df[filtered_df[use_col].astype(str) == str(value)]
+                    logger.info(f"  ✓ Filtered by {use_col} = {value}, remaining rows: {len(filtered_df)}")
             else:
-                logger.warning(f"  ⚠️ Column '{col}' not found in dataframe")
+                logger.warning(f"  ⚠️ Column '{col}' not found in dataframe (tried mapping to '{use_col}')")
         
         return filtered_df
     
@@ -648,6 +770,123 @@ class DashboardGenerator:
         
         return merged_df
     
+    def _determine_and_apply_filters(self, filters: Dict, user_query: str) -> pd.DataFrame:
+        """
+        Intelligently determine which table(s) to use based on filters and query keywords.
+        Supports multi-table joins when needed (Sales Order + COF Inventory + COF Pricing).
+        """
+        logger.info("Determining which tables to use based on filters and query...")
+        
+        # Keywords that indicate COF pricing data is needed
+        pricing_keywords = ['pricing', 'price', 'condition amount', 'condition currency', 'pricing unit', 'cost']
+        needs_pricing = any(keyword in user_query.lower() for keyword in pricing_keywords)
+        
+        # Check which tables have the filter columns
+        sales_df = self.data['exception_report']
+        cof_inventory_df = self.data.get('cof_inventory')
+        cof_pricing_df = self.data.get('cof_pricing')
+        
+        sales_cols = set(sales_df.columns)
+        cof_inv_cols = set(cof_inventory_df.columns) if cof_inventory_df is not None else set()
+        cof_price_cols = set(cof_pricing_df.columns) if cof_pricing_df is not None else set()
+        
+        # Categorize filters by table
+        sales_filters = {}
+        cof_inv_filters = {}
+        cof_price_filters = {}
+        
+        for col, value in filters.items():
+            if col in sales_cols:
+                sales_filters[col] = value
+            if col in cof_inv_cols:
+                cof_inv_filters[col] = value
+            if col in cof_price_cols:
+                cof_price_filters[col] = value
+        
+        logger.info(f"Filter analysis:")
+        logger.info(f"  - Sales Order filters: {sales_filters}")
+        logger.info(f"  - COF Inventory filters: {cof_inv_filters}")
+        logger.info(f"  - COF Pricing filters: {cof_price_filters}")
+        logger.info(f"  - Query needs pricing data: {needs_pricing}")
+        
+        # Case 1: Query mentions pricing keywords - need to join with COF tables
+        if needs_pricing and cof_inventory_df is not None and cof_pricing_df is not None:
+            logger.info("🔗 Multi-table join required: Sales Order → COF Inventory → COF Pricing")
+            
+            # Step 1: Filter Sales Order table
+            result_df = sales_df.copy()
+            if sales_filters:
+                result_df = self._apply_filters(result_df, sales_filters)
+                logger.info(f"  Sales Order filtered: {len(result_df):,} rows")
+            
+            # Step 2: Join with COF Inventory (on Sold-to Name and Material)
+            cof_inv_filtered = cof_inventory_df.copy()
+            if cof_inv_filters:
+                cof_inv_filtered = self._apply_filters(cof_inv_filtered, cof_inv_filters)
+                logger.info(f"  COF Inventory filtered: {len(cof_inv_filtered):,} rows")
+            
+            # Join on Sold-to Name (if available in both tables)
+            if 'Sold-to Name' in result_df.columns and 'Sold-to Name' in cof_inv_filtered.columns:
+                logger.info("  Joining Sales Order ↔ COF Inventory on 'Sold-to Name'")
+                result_df = pd.merge(
+                    result_df,
+                    cof_inv_filtered,
+                    on='Sold-to Name',
+                    how='inner',
+                    suffixes=('', '_cof_inv')
+                )
+                logger.info(f"  After COF Inventory join: {len(result_df):,} rows")
+            
+            # Step 3: Join with COF Pricing (on Material)
+            cof_price_filtered = cof_pricing_df.copy()
+            if cof_price_filters:
+                cof_price_filtered = self._apply_filters(cof_price_filtered, cof_price_filters)
+                logger.info(f"  COF Pricing filtered: {len(cof_price_filtered):,} rows")
+            
+            # Determine material column name (might have suffix after previous join)
+            material_col_left = 'Material' if 'Material' in result_df.columns else 'Material_cof_inv'
+            material_col_right = 'Material'
+            
+            if material_col_left in result_df.columns and material_col_right in cof_price_filtered.columns:
+                logger.info(f"  Joining Result ↔ COF Pricing on '{material_col_left}' = '{material_col_right}'")
+                result_df = pd.merge(
+                    result_df,
+                    cof_price_filtered,
+                    left_on=material_col_left,
+                    right_on=material_col_right,
+                    how='inner',
+                    suffixes=('', '_cof_price')
+                )
+                logger.info(f"  After COF Pricing join: {len(result_df):,} rows")
+            
+            result_df['_is_joined'] = True
+            return result_df
+        
+        # Case 2: Only COF data needed (no sales order filters)
+        elif (cof_inv_filters or cof_price_filters) and not sales_filters:
+            logger.info("COF-only query detected")
+            # Return COF data (joined if needed)
+            if cof_inv_filters and cof_price_filters:
+                # Join COF Inventory + COF Pricing
+                cof_inv_filtered = self._apply_filters(cof_inventory_df.copy(), cof_inv_filters)
+                cof_price_filtered = self._apply_filters(cof_pricing_df.copy(), cof_price_filters)
+                result_df = pd.merge(
+                    cof_inv_filtered,
+                    cof_price_filtered,
+                    on='Material',
+                    how='inner'
+                )
+                logger.info(f"COF tables joined: {len(result_df):,} rows")
+                return result_df
+            elif cof_inv_filters:
+                return self._apply_filters(cof_inventory_df.copy(), cof_inv_filters)
+            elif cof_price_filters:
+                return self._apply_filters(cof_pricing_df.copy(), cof_price_filters)
+        
+        # Case 3: Default - Sales Order table only
+        logger.info("Using Sales Order table only")
+        return self._apply_filters(sales_df.copy(), filters)
+    
     def _render_dynamic_chart(self, chart_config: Dict, data: pd.DataFrame):
         """Render a chart based on LLM-generated configuration"""
         chart_type = chart_config.get('type', 'table')
@@ -660,10 +899,22 @@ class DashboardGenerator:
                 agg_func = chart_config.get('agg_function', 'count')
                 limit = chart_config.get('limit', 10)
                 
-                # Validate x_column exists
-                if not x_col or x_col not in data.columns:
-                    st.error(f"Column '{x_col}' not found in data. Available columns: {', '.join(data.columns.tolist())}")
+                # Validate x_column exists (allow fuzzy mapping via classifier)
+                if not x_col:
+                    st.error(f"No x_column provided for bar chart")
                     return
+                if x_col not in data.columns:
+                    mapped = None
+                    try:
+                        mapped = self.classifier._map_column_name(x_col, data.columns.tolist())
+                    except Exception:
+                        mapped = None
+                    if mapped:
+                        x_col = mapped
+                        chart_config['x_column'] = mapped
+                    else:
+                        st.error(f"Column '{chart_config.get('x_column')}' not found in data. Available columns: {', '.join(data.columns.tolist())}")
+                        return
                 
                 # Create a copy and ensure x_column is string type to prevent number abbreviations
                 data = data.copy()
@@ -675,9 +926,21 @@ class DashboardGenerator:
                     fig = px.bar(chart_data, x=x_col, y='Count', title=title)
                 else:
                     # Validate y_column exists
-                    if not y_col or y_col not in data.columns:
-                        st.error(f"Column '{y_col}' not found in data. Available columns: {', '.join(data.columns.tolist())}")
+                    if not y_col:
+                        st.error(f"No y_column provided for bar chart")
                         return
+                    if y_col not in data.columns:
+                        mapped_y = None
+                        try:
+                            mapped_y = self.classifier._map_column_name(y_col, data.columns.tolist())
+                        except Exception:
+                            mapped_y = None
+                        if mapped_y:
+                            y_col = mapped_y
+                            chart_config['y_column'] = mapped_y
+                        else:
+                            st.error(f"Column '{chart_config.get('y_column')}' not found in data. Available columns: {', '.join(data.columns.tolist())}")
+                            return
                     chart_data = data.groupby(x_col, dropna=False)[y_col].agg(agg_func).reset_index()
                     chart_data = chart_data.sort_values(y_col, ascending=False).head(limit)
                     fig = px.bar(chart_data, x=x_col, y=y_col, title=title)
@@ -696,13 +959,29 @@ class DashboardGenerator:
                 limit = chart_config.get('limit', 10)
                 limit_groups = chart_config.get('limit_groups', 5)
                 
-                # Validate columns exist
-                if not x_col or x_col not in data.columns:
-                    st.error(f"Column '{x_col}' not found in data")
+                # Validate columns exist (allow fuzzy mapping)
+                if not x_col:
+                    st.error("No x_column provided for grouped/stacked bar chart")
                     return
-                if not color_by or color_by not in data.columns:
-                    st.error(f"Column '{color_by}' not found in data")
+                if x_col not in data.columns:
+                    mapped_x = self.classifier._map_column_name(x_col, data.columns.tolist())
+                    if mapped_x:
+                        x_col = mapped_x
+                        chart_config['x_column'] = mapped_x
+                    else:
+                        st.error(f"Column '{x_col}' not found in data")
+                        return
+                if not color_by:
+                    st.error("No color_by provided for grouped/stacked bar chart")
                     return
+                if color_by not in data.columns:
+                    mapped_c = self.classifier._map_column_name(color_by, data.columns.tolist())
+                    if mapped_c:
+                        color_by = mapped_c
+                        chart_config['color_by'] = mapped_c
+                    else:
+                        st.error(f"Column '{color_by}' not found in data")
+                        return
                 
                 # Create a copy and convert to string
                 data = data.copy()
@@ -744,9 +1023,17 @@ class DashboardGenerator:
             elif chart_type == 'pie':
                 group_col = chart_config.get('group_by')
                 # Validate group_by column exists
-                if not group_col or group_col not in data.columns:
-                    st.error(f"Column '{group_col}' not found in data. Available columns: {', '.join(data.columns.tolist())}")
+                if not group_col:
+                    st.error("No group_by provided for pie chart")
                     return
+                if group_col not in data.columns:
+                    mapped_g = self.classifier._map_column_name(group_col, data.columns.tolist())
+                    if mapped_g:
+                        group_col = mapped_g
+                        chart_config['group_by'] = mapped_g
+                    else:
+                        st.error(f"Column '{group_col}' not found in data. Available columns: {', '.join(data.columns.tolist())}")
+                        return
                 
                 # Convert to string to prevent abbreviations
                 data = data.copy()
@@ -781,12 +1068,13 @@ class DashboardGenerator:
         
         start_time = time.time()
         
-        # APPLY FILTERS TO DATA (Stage 1 complete) with cross-table support
+        # APPLY FILTERS TO DATA (Stage 1 complete) with multi-table support
         if requires_join:
             combined_data = self._apply_cross_table_filters(filter_result)
             logger.info(f"✓ Cross-table join performed")
         else:
-            combined_data = self._apply_filters(self.data['exception_report'], filters)
+            # Determine which table(s) to use based on filters and query
+            combined_data = self._determine_and_apply_filters(filters, user_query)
         
         logger.info(f"Data filtered: {len(self.data['exception_report']):,} → {len(combined_data):,} records")
         
@@ -854,14 +1142,39 @@ class DashboardGenerator:
                         value = len(combined_data[col_name].dropna()) if col_name in combined_data.columns else 0
                     elif func == 'count_unique':
                         value = combined_data[col_name].nunique() if col_name in combined_data.columns else 0
-                    elif func == 'sum':
-                        value = combined_data[col_name].sum() if col_name in combined_data.columns else 0
-                    elif func == 'mean':
-                        value = combined_data[col_name].mean() if col_name in combined_data.columns else 0
-                    elif func == 'max':
-                        value = combined_data[col_name].max() if col_name in combined_data.columns else 0
-                    elif func == 'min':
-                        value = combined_data[col_name].min() if col_name in combined_data.columns else 0
+                    elif func in ['sum', 'mean', 'max', 'min']:
+                        # For numeric aggregations, check if column is numeric
+                        # If not, use Order Quantity Sales Unit as the default numeric column
+                        if col_name in combined_data.columns:
+                            col_dtype = combined_data[col_name].dtype
+                            if col_dtype in ['object', 'string']:
+                                # Non-numeric column - user likely wants to aggregate BY this column
+                                # Use Order Quantity Sales Unit as the target
+                                logger.info(f"  Column '{col_name}' is non-numeric ({col_dtype}), interpreting as grouping column")
+                                logger.info(f"  Using 'Order Quantity Sales Unit' as aggregation target")
+                                if 'Order Quantity Sales Unit' in combined_data.columns:
+                                    if func == 'sum':
+                                        value = combined_data['Order Quantity Sales Unit'].sum()
+                                    elif func == 'mean':
+                                        value = combined_data['Order Quantity Sales Unit'].mean()
+                                    elif func == 'max':
+                                        value = combined_data['Order Quantity Sales Unit'].max()
+                                    elif func == 'min':
+                                        value = combined_data['Order Quantity Sales Unit'].min()
+                                else:
+                                    value = 0
+                            else:
+                                # Numeric column - aggregate directly
+                                if func == 'sum':
+                                    value = combined_data[col_name].sum()
+                                elif func == 'mean':
+                                    value = combined_data[col_name].mean()
+                                elif func == 'max':
+                                    value = combined_data[col_name].max()
+                                elif func == 'min':
+                                    value = combined_data[col_name].min()
+                        else:
+                            value = 0
                     else:
                         value = len(combined_data)
                     
@@ -1209,14 +1522,33 @@ class DashboardGenerator:
                             value = len(filtered_exceptions)
                         elif func == 'count_unique':
                             value = filtered_exceptions[col_name].nunique()
-                        elif func == 'sum':
-                            value = filtered_exceptions[col_name].sum()
-                        elif func == 'mean':
-                            value = filtered_exceptions[col_name].mean()
-                        elif func == 'max':
-                            value = filtered_exceptions[col_name].max()
-                        elif func == 'min':
-                            value = filtered_exceptions[col_name].min()
+                        elif func in ['sum', 'mean', 'max', 'min']:
+                            # Check if column is numeric
+                            col_dtype = filtered_exceptions[col_name].dtype
+                            if col_dtype in ['object', 'string']:
+                                # Non-numeric column - use Order Quantity Sales Unit as target
+                                logger.info(f"  Column '{col_name}' is non-numeric, using 'Order Quantity Sales Unit' as target")
+                                if 'Order Quantity Sales Unit' in filtered_exceptions.columns:
+                                    if func == 'sum':
+                                        value = filtered_exceptions['Order Quantity Sales Unit'].sum()
+                                    elif func == 'mean':
+                                        value = filtered_exceptions['Order Quantity Sales Unit'].mean()
+                                    elif func == 'max':
+                                        value = filtered_exceptions['Order Quantity Sales Unit'].max()
+                                    elif func == 'min':
+                                        value = filtered_exceptions['Order Quantity Sales Unit'].min()
+                                else:
+                                    value = 0
+                            else:
+                                # Numeric column - aggregate directly
+                                if func == 'sum':
+                                    value = filtered_exceptions[col_name].sum()
+                                elif func == 'mean':
+                                    value = filtered_exceptions[col_name].mean()
+                                elif func == 'max':
+                                    value = filtered_exceptions[col_name].max()
+                                elif func == 'min':
+                                    value = filtered_exceptions[col_name].min()
                         else:
                             value = len(filtered_exceptions)
                         
