@@ -1740,20 +1740,49 @@ def main():
         text-align: left;
     }
     [data-testid="stSidebar"] {
-        min-width: 40%;
-        max-width: 40%;
+        min-width: 30%;
+        max-width: 30%;
     }
+    [data-testid="stSidebar"] > div:first-child {
+        padding-top: 0rem !important;
+        padding-bottom: 0rem !important;
+    }
+    /* Pill-style buttons for examples and follow-ups */
     .stButton button {
         width: 100%;
-        border-radius: 8px;
+        border-radius: 25px !important;
         text-align: left;
-        padding: 10px;
-        border: 1px solid #e0e0e0;
-        background-color: white;
+        padding: 6px 16px !important;
+        border: 2px solid #4A90E2 !important;
+        background-color: white !important;
+        color: #4A90E2 !important;
+        font-size: 10px !important;
+        margin-bottom: 6px !important;
+        height: auto !important;
+        min-height: 32px !important;
+        line-height: 1.2 !important;
     }
     .stButton button:hover {
-        background-color: #f5f5f5;
-        border-color: #9ca3af;
+        background-color: #E3F2FD !important;
+        border-color: #2E7BD6 !important;
+    }
+    /* Remove spacing and padding aggressively */
+    .element-container {
+        margin-bottom: 0 !important;
+        padding: 0 !important;
+    }
+    div[data-testid="stVerticalBlock"] > div {
+        gap: 0 !important;
+        padding: 0 !important;
+    }
+    [data-testid="stSidebar"] .element-container {
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    [data-testid="stSidebar"] h4 {
+        margin-top: 0.3rem !important;
+        margin-bottom: 0.3rem !important;
+        font-size: 0.95rem !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -1790,36 +1819,51 @@ def main():
     
     # SIDEBAR - 30% Left Side for Chat and Input
     with st.sidebar:
+        # TOP SECTION - SAP Assistant Header (always visible at top)
         st.title("🤖 SAP Assistant")
-        st.markdown("Ask questions about your SAP data")
+        st.markdown("Ask questions about your SAP data.")
         
-        # Chat History
-        st.markdown("### 💬 Conversation")
-        chat_container = st.container()
-        with chat_container:
-            if st.session_state.chat_history:
+        
+        # MIDDLE SECTION - Scrollable content
+        # Show conversation history only if chat exists
+        if st.session_state.chat_history:
+            st.markdown("### 💬 Conversation")
+            with st.container(height=300):
                 for i, msg in enumerate(st.session_state.chat_history):
                     if msg['role'] == 'user':
                         st.markdown(f'<div class="chat-message user-message"><b>You:</b> {msg["content"]}</div>', unsafe_allow_html=True)
                     else:
                         st.markdown(f'<div class="chat-message assistant-message"><b>Assistant:</b> {msg["content"]}</div>', unsafe_allow_html=True)
-            else:
-                st.info("👋 Start by asking a question below!")
+            st.markdown("---")
         
-        st.markdown("---")
-        
-        # Follow-up Questions
+        # Follow-up Questions (only if they exist)
         if st.session_state.followup_questions:
-            st.markdown("### 💭 Follow-up Questions")
+            st.markdown("#### Suggested Follow-ups")
             for idx, question in enumerate(st.session_state.followup_questions):
                 if st.button(question, key=f"followup_{idx}"):
                     st.session_state.user_input_value = question
                     st.session_state.current_query = question
                     st.session_state.process_query = True
                     st.rerun()
-            st.markdown("---")
         
-        # Input area
+        # Example queries (only show when no conversation exists)
+        if not st.session_state.chat_history:
+            st.markdown("#### 💡 Example Queries")
+            example_queries = [
+                "Show me authorized to sell details",
+                "What are the sales exceptions?",
+                "Give me plant-wise analysis",
+                "Show overview of all data"
+            ]
+            
+            for example in example_queries:
+                if st.button(example, key=f"example_{example}"):
+                    st.session_state.user_input_value = example
+                    st.session_state.current_query = example
+                    st.session_state.process_query = True
+                    st.rerun()
+        
+        # BOTTOM SECTION - Ask a Question (always visible at bottom)
         st.markdown("### 💬 Ask a Question")
         
         # Initialize input value in session state
@@ -1835,7 +1879,8 @@ def main():
             value=st.session_state.user_input_value,
             placeholder="e.g., Show me authorized to sell details",
             height=100,
-            key=f"user_query_input_{st.session_state.input_key_counter}"
+            key=f"user_query_input_{st.session_state.input_key_counter}",
+            label_visibility="collapsed"
         )
         
         # Store current query - text area value takes precedence unless it's empty during processing
@@ -1856,26 +1901,10 @@ def main():
                 st.session_state.current_query = ""
                 st.rerun()
         
-        # Example queries
-        with st.expander("💡 Example Queries"):
-            example_queries = [
-                "Show me authorized to sell details",
-                "What are the sales exceptions?",
-                "Give me plant-wise analysis",
-                "Show overview of all data"
-            ]
-            
-            for example in example_queries:
-                if st.button(example, key=f"example_{example}"):
-                    st.session_state.user_input_value = example
-                    st.session_state.current_query = example
-                    st.session_state.process_query = True
-                    st.rerun()
-        
         st.markdown("---")
         
-        # Settings
-        with st.expander("⚙️ Settings"):
+        # Settings at bottom (expandable)
+        with st.expander("⚙️ Settings", expanded=False):
             dev_mode = st.checkbox("🔧 Developer Mode", value=False, key="dev_mode_checkbox", help="Show API requests, console logs, and debug info")
             show_metrics = st.checkbox("📊 Show Performance Metrics", value=False, key="show_metrics_checkbox")
     
