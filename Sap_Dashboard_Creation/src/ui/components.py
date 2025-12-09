@@ -43,9 +43,9 @@ def _handle_followup_click(question: str):
     st.session_state.process_query = True
     # Add user message to chat history immediately so sidebar shows it on rerun
     st.session_state.chat_history.append({'role': 'user', 'content': question})
-    # Generate follow-up questions immediately for sidebar update
-    st.session_state.followup_questions = st.session_state.classifier.generate_followup_questions(question)
-    # They will be regenerated during dashboard processing (parallel) with context
+    # Generate new follow-up questions immediately
+    if 'classifier' in st.session_state:
+        st.session_state.followup_questions = st.session_state.classifier.generate_followup_questions(question)
 
 def render_followup_questions(followup_questions: List[str]):
     """Render follow-up question buttons"""
@@ -69,10 +69,9 @@ def _handle_example_click(example: str):
     st.session_state.process_query = True
     # Add user message to chat history immediately so sidebar shows it on rerun
     st.session_state.chat_history.append({'role': 'user', 'content': example})
-    # Generate follow-up questions immediately for sidebar update
+    # Generate follow-up questions immediately
     if 'classifier' in st.session_state:
         st.session_state.followup_questions = st.session_state.classifier.generate_followup_questions(example)
-    # They will be regenerated during dashboard processing (parallel) with context
 
 def render_example_queries():
     """Render example query buttons"""
@@ -120,17 +119,14 @@ def render_query_input() -> str:
     
     def _handle_send():
         """Callback for send button"""
-        # Get query from text area widget directly
-        query = st.session_state.get(f"user_query_input_{st.session_state.input_key_counter}", "").strip()
-        if query:
-            st.session_state.current_query = query
+        if st.session_state.get('current_query'):
+            query = st.session_state.current_query
             st.session_state.process_query = True
-            # Add user message to chat history immediately
+            # Add user message to chat history immediately so sidebar shows it on rerun
             st.session_state.chat_history.append({'role': 'user', 'content': query})
-            # Generate follow-up questions immediately for sidebar update
+            # Generate follow-up questions immediately
             if 'classifier' in st.session_state:
                 st.session_state.followup_questions = st.session_state.classifier.generate_followup_questions(query)
-            # They will be regenerated during dashboard processing (parallel) with context
     
     def _handle_clear():
         """Callback for clear button"""
