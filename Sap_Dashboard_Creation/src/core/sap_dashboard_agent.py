@@ -30,6 +30,7 @@ from exception_handler import (
     suggest_charts_from_llm,
 )
 from prompt_manager import PromptTemplateManager
+import concurrent.futures
 
 # Setup logging
 logging.basicConfig(
@@ -206,6 +207,24 @@ class IntentClassifier:
         # Initialize prompt manager
         self.prompt_manager = PromptTemplateManager()
         
+        # Follow-up questions prompt with schema information
+        self.followup_system_prompt = """You are a helpful SAP data assistant. Based on the user's query and the ACTUAL COLUMN NAMES from the database schema provided, generate 3-4 relevant follow-up questions.
+
+CRITICAL RULES:
+1. ONLY use column names that EXACTLY match the schema provided below
+2. DO NOT assume or make up column names
+3. Questions must be specific and use EXACT column names from the schema
+4. Help users explore different aspects of the data using actual available columns
+5. Be related to SAP sales, inventory, materials, plants, and pricing data
+
+Available Schema:
+{schema_info}
+
+Return ONLY a JSON array of strings (the questions), nothing else.
+
+Example format:
+["Can you show materials for Plant 1007?", "What is the order quantity breakdown by Sold-to Name?", "Show me the Net Value Doc Currency trends", "Filter by Auth Sell Flag Description"]"""
+        
         # NOTE: Schema information is now dynamically injected via prompt_manager
         # No need to pre-generate columns_info - it's generated on-demand
         
@@ -323,6 +342,82 @@ Example:
             return best
 
         return None
+    
+    def generate_followup_questions(self, user_query: str) -> List[str]:
+        """Generate follow-up questions based on user query using parallel LLM call.
+        
+        Args:
+            user_query: The user's original question
+            
+        Returns:
+            List of follow-up question strings
+        """
+        try:
+            logger.info("Generating follow-up questions...")
+            
+            # Get schema information for accurate column references
+            schema_info = self.prompt_manager.get_columns_info()
+            
+            # Format the system prompt with schema
+            formatted_prompt = self.followup_system_prompt.format(schema_info=schema_info)
+            
+            payload = {
+                "generation_model": "gpt-4o",
+                "max_tokens": 500,
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "presence_penalty": 0,
+                "frequency_penalty": 0,
+                "tools": [],
+                "tools_choice": "none",
+                "system_prompt": formatted_prompt,
+                "custom_prompt": [
+                    {"role": "user", "content": f"User Query: {user_query}\n\nGenerate 4 relevant follow-up questions using ONLY the exact column names from the schema above."}
+                ],
+                "model_provider_name": "openai"
+            }
+            
+            response = invoke_llm(payload, timeout=30)
+            
+            if isinstance(response, dict) and response.get('error'):
+                logger.error(f"Error generating follow-up questions: {response['error']}")
+                return self._get_default_followups()
+            
+            # Parse response
+            if isinstance(response, dict) and 'response' in response:
+                content = response['response']
+            else:
+                content = str(response)
+            
+            # Remove markdown code blocks if present
+            if '```json' in content:
+                content = content.split('```json')[1].split('```')[0].strip()
+            elif '```' in content:
+                content = content.split('```')[1].split('```')[0].strip()
+            
+            # Try to parse as JSON
+            try:
+                questions = json.loads(content)
+                if isinstance(questions, list) and len(questions) > 0:
+                    logger.info(f"Generated {len(questions)} follow-up questions")
+                    return questions[:4]  # Limit to 4 questions
+            except json.JSONDecodeError:
+                logger.warning("Could not parse follow-up questions as JSON")
+            
+            return self._get_default_followups()
+            
+        except Exception as e:
+            logger.exception("Error generating follow-up questions")
+            return self._get_default_followups()
+    
+    def _get_default_followups(self) -> List[str]:
+        """Return default follow-up questions as fallback using actual column names."""
+        return [
+            "Show me data filtered by Plant",
+            "What is the Auth Sell Flag Description breakdown?",
+            "Can you show Order Quantity Sales Unit by Material?",
+            "Filter by Sold-to Name and show details"
+        ]
     
     def classify(self, query: str) -> Dict:
         """Extract filters from user query - STAGE 1"""
@@ -1624,15 +1719,50 @@ class DashboardGenerator:
 def main():
     st.set_page_config(page_title="SAP Dashboard Agent", page_icon="📊", layout="wide")
     
-    st.title("🤖 SAP Intelligent Dashboard Generator")
-    st.markdown("Ask questions in natural language and get dynamic dashboards!")
+    # Custom CSS for chat-like interface with 30-70 split
+    st.markdown("""
+    <style>
+    .stTextInput > div > div > input {
+        border-radius: 20px;
+    }
+    .chat-message {
+        padding: 10px 15px;
+        border-radius: 15px;
+        margin: 8px 0;
+        font-size: 14px;
+    }
+    .user-message {
+        background-color: #e3f2fd;
+        text-align: left;
+    }
+    .assistant-message {
+        background-color: #f5f5f5;
+        text-align: left;
+    }
+    [data-testid="stSidebar"] {
+        min-width: 40%;
+        max-width: 40%;
+    }
+    .stButton button {
+        width: 100%;
+        border-radius: 8px;
+        text-align: left;
+        padding: 10px;
+        border: 1px solid #e0e0e0;
+        background-color: white;
+    }
+    .stButton button:hover {
+        background-color: #f5f5f5;
+        border-color: #9ca3af;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     
-    # Sidebar - Developer Mode Toggle
-    st.sidebar.header("⚙️ Settings")
-    dev_mode = st.sidebar.checkbox("🔧 Developer Mode", value=False, help="Show API requests, console logs, and debug info")
-    show_metrics = st.sidebar.checkbox("📊 Show Performance Metrics", value=False)
-    
-    # Session state for logging
+    # Initialize session state for chat history
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    if 'followup_questions' not in st.session_state:
+        st.session_state.followup_questions = []
     if 'logs' not in st.session_state:
         st.session_state.logs = []
     if 'api_calls' not in st.session_state:
@@ -1658,130 +1788,222 @@ def main():
         logger.error(f"Application initialization failed: {str(e)}")
         return
     
-    # User Input
-    st.sidebar.header("🎯 Ask Your Question")
-    user_query = st.sidebar.text_area(
-        "Enter your query:",
-        placeholder="e.g., Show me authorized to sell details\nWhat are the sales exceptions?\nGive me plant-wise analysis",
-        height=100
-    )
-    
-    # Generate button to trigger processing (aligned to right)
-    col1, col2 = st.sidebar.columns([3, 3])
-    with col1:
-        st.write("")  # Empty space
-    with col2:
-        run_button = st.button("Generate", use_container_width=True)
-    st.sidebar.caption("Enter a query then click 'Generate' (click an example to populate the query)")
-    
-    # Example queries
-    st.sidebar.markdown("### 💡 Example Queries:")
-    example_queries = [
-        "Show me authorized to sell details",
-        "What are the sales exceptions?",
-        "Give me plant-wise analysis",
-        "Show overview of all data"
-    ]
-    
-    for example in example_queries:
-        if st.sidebar.button(example, key=example):
-            user_query = example
-    
-    # Developer Mode Panel
-    if dev_mode:
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### 🔧 Developer Tools")
-        if st.sidebar.button("🗑️ Clear Logs"):
-            st.session_state.logs = []
-            st.session_state.api_calls = []
-            st.rerun()
+    # SIDEBAR - 30% Left Side for Chat and Input
+    with st.sidebar:
+        st.title("🤖 SAP Assistant")
+        st.markdown("Ask questions about your SAP data")
         
-        if st.sidebar.button("🔄 Refresh Data"):
-            st.cache_data.clear()
-            st.rerun()
+        # Chat History
+        st.markdown("### 💬 Conversation")
+        chat_container = st.container()
+        with chat_container:
+            if st.session_state.chat_history:
+                for i, msg in enumerate(st.session_state.chat_history):
+                    if msg['role'] == 'user':
+                        st.markdown(f'<div class="chat-message user-message"><b>You:</b> {msg["content"]}</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown(f'<div class="chat-message assistant-message"><b>Assistant:</b> {msg["content"]}</div>', unsafe_allow_html=True)
+            else:
+                st.info("👋 Start by asking a question below!")
+        
+        st.markdown("---")
+        
+        # Follow-up Questions
+        if st.session_state.followup_questions:
+            st.markdown("### 💭 Follow-up Questions")
+            for idx, question in enumerate(st.session_state.followup_questions):
+                if st.button(question, key=f"followup_{idx}"):
+                    st.session_state.user_input_value = question
+                    st.session_state.current_query = question
+                    st.session_state.process_query = True
+                    st.rerun()
+            st.markdown("---")
+        
+        # Input area
+        st.markdown("### 💬 Ask a Question")
+        
+        # Initialize input value in session state
+        if 'user_input_value' not in st.session_state:
+            st.session_state.user_input_value = ""
+        if 'process_query' not in st.session_state:
+            st.session_state.process_query = False
+        if 'input_key_counter' not in st.session_state:
+            st.session_state.input_key_counter = 0
+        
+        user_query = st.text_area(
+            "Your question:",
+            value=st.session_state.user_input_value,
+            placeholder="e.g., Show me authorized to sell details",
+            height=100,
+            key=f"user_query_input_{st.session_state.input_key_counter}"
+        )
+        
+        # Store current query - text area value takes precedence unless it's empty during processing
+        if user_query:
+            st.session_state.current_query = user_query
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("➤ Send", key="send_btn", use_container_width=True):
+                if user_query:
+                    st.session_state.process_query = True
+                    st.rerun()
+        with col2:
+            if st.button("🗑️ Clear", key="clear_btn", use_container_width=True):
+                st.session_state.chat_history = []
+                st.session_state.followup_questions = []
+                st.session_state.user_input_value = ""
+                st.session_state.current_query = ""
+                st.rerun()
+        
+        # Example queries
+        with st.expander("💡 Example Queries"):
+            example_queries = [
+                "Show me authorized to sell details",
+                "What are the sales exceptions?",
+                "Give me plant-wise analysis",
+                "Show overview of all data"
+            ]
+            
+            for example in example_queries:
+                if st.button(example, key=f"example_{example}"):
+                    st.session_state.user_input_value = example
+                    st.session_state.current_query = example
+                    st.session_state.process_query = True
+                    st.rerun()
+        
+        st.markdown("---")
+        
+        # Settings
+        with st.expander("⚙️ Settings"):
+            dev_mode = st.checkbox("🔧 Developer Mode", value=False, key="dev_mode_checkbox", help="Show API requests, console logs, and debug info")
+            show_metrics = st.checkbox("📊 Show Performance Metrics", value=False, key="show_metrics_checkbox")
+    
+    # MAIN AREA - 70% Right Side for Dashboard
+    st.title("📊 Dashboard")
+    
+    # Get current query from session state
+    user_query = st.session_state.get('current_query', '')
     
     # Manage run state to avoid re-running on every rerender
     if 'last_run_query' not in st.session_state:
         st.session_state['last_run_query'] = None
 
     should_run = False
-    if user_query and run_button:
-        # run if user clicked Generate
+    if user_query and st.session_state.get('process_query', False):
+        # run if user clicked Send or triggered from example/followup
         if st.session_state['last_run_query'] != user_query:
             should_run = True
             st.session_state['last_run_query'] = user_query
+        st.session_state.process_query = False  # Reset trigger
 
     # Process Query
     if should_run:
-        # Show animated loading indicator with custom GIF (centered)
-        loader_col1, loader_col2, loader_col3 = st.columns([2, 1, 2])
-        with loader_col2:
-            loader_placeholder = st.empty()
-            # Get absolute path to Loader.gif (case-sensitive for Linux deployment)
-            loader_path = Path(__file__).parent.parent.parent / "docs" / "Loader.gif"
-            if loader_path.exists():
-                with open(loader_path, "rb") as f:
-                    loader_data = base64.b64encode(f.read()).decode()
-                loader_placeholder.markdown(
-                    f"""<div style="display: flex; justify-content: center;">
-                    <img src="data:image/gif;base64,{loader_data}" width="100">
-                    </div>""",
-                    unsafe_allow_html=True
-                )
-            else:
-                loader_placeholder.info("⏳ Loading...")
+        # Add user message to chat history
+        st.session_state.chat_history.append({'role': 'user', 'content': user_query})
         
-        try:
-            query_start = time.time()
+        # Show animated loading indicator
+        with st.spinner("🔄 Processing your query..."):
+            try:
+                query_start = time.time()
+                
+                # PARALLEL EXECUTION: Stage 1 (Filter Extraction) + Follow-up Questions Generation
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                    # Submit both tasks in parallel
+                    filter_future = executor.submit(classifier.classify, user_query)
+                    followup_future = executor.submit(classifier.generate_followup_questions, user_query)
+                    
+                    # Wait for both to complete
+                    filter_result = filter_future.result()
+                    followup_questions = followup_future.result()
+                    
+                    # Store follow-up questions in session state
+                    st.session_state.followup_questions = followup_questions
+                
+                classification_time = time.time() - query_start
+                st.session_state.performance_metrics['filter_extraction_time'] = classification_time
+                
+                # Log API call
+                st.session_state.api_calls.append({
+                    'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    'type': 'Stage 1: Filter Extraction + Follow-up Questions',
+                    'query': user_query,
+                    'response': filter_result,
+                    'duration': f"{classification_time:.2f}s"
+                })
+                
+                # STAGE 2: Generate Dashboard with Charts
+                dashboard_start = time.time()
+                dashboard_gen.generate(filter_result, user_query)
+                dashboard_time = time.time() - dashboard_start
+                st.session_state.performance_metrics['dashboard_generation_time'] = dashboard_time
+                
+                total_time = time.time() - query_start
+                st.session_state.performance_metrics['total_time'] = total_time
+                
+                # Store results in session state
+                st.session_state.last_filter_result = filter_result
+                st.session_state.last_total_time = total_time
+                st.session_state.last_query = user_query
+                st.session_state.show_last_dashboard = True
+                
+                # Add assistant response to chat history
+                st.session_state.chat_history.append({'role': 'assistant', 'content': f"Dashboard generated successfully in {total_time:.2f}s"})
+                
+                # Clear input and state, then rerun to refresh sidebar
+                st.session_state.user_input_value = ""
+                st.session_state.input_key_counter += 1
+                st.session_state.current_query = ""
+                st.session_state.process_query = False
+                st.rerun()
             
-            # STAGE 1: Extract Filters
-            filter_result = classifier.classify(user_query)
-            classification_time = time.time() - query_start
-            st.session_state.performance_metrics['filter_extraction_time'] = classification_time
-            
-            # Log API call
-            st.session_state.api_calls.append({
-                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                'type': 'Stage 1: Filter Extraction',
-                'query': user_query,
-                'response': filter_result,
-                'duration': f"{classification_time:.2f}s"
-            })
-            
-            # STAGE 2: Generate Dashboard with Charts
-            dashboard_start = time.time()
-            dashboard_gen.generate(filter_result, user_query)
-            dashboard_time = time.time() - dashboard_start
-            st.session_state.performance_metrics['dashboard_generation_time'] = dashboard_time
-            
-            total_time = time.time() - query_start
-            st.session_state.performance_metrics['total_time'] = total_time
-            
-            # Clear loader
-            loader_placeholder.empty()
+            except Exception as e:
+                st.session_state.chat_history.append({'role': 'assistant', 'content': f"Error: {str(e)}"})
+                st.error(f"Error: {str(e)}")
+                st.session_state.user_input_value = ""
+                st.session_state.input_key_counter += 1
+                st.session_state.current_query = ""
+                st.session_state.process_query = False
+                st.rerun()
         
-        except Exception as e:
-            loader_placeholder.empty()
-            raise
+        # Show filter extraction results after generation (outside spinner)
+        if dev_mode and 'last_filter_result' in st.session_state:
+            with st.expander("🔍 Stage 1: Filter Extraction Results"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**User Query:**")
+                    st.code(st.session_state['last_run_query'], language="text")
+                with col2:
+                    st.markdown("**Extracted Filters:**")
+                    st.json(st.session_state.last_filter_result.get('filters', {}))
         
-        # Show filter extraction results after generation
-        with st.expander("🔍 Stage 1: Filter Extraction Results"):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**User Query:**")
-                st.code(user_query, language="text")
-            with col2:
-                st.markdown("**Extracted Filters:**")
-                st.json(filter_result.get('filters', {}))
+        if 'last_total_time' in st.session_state:
+            st.success(f"✅ Dashboard generated in {st.session_state.last_total_time:.2f}s")
+    
+    # Re-display last dashboard after rerun (to show updated sidebar with chat history and followup questions)
+    elif st.session_state.get('show_last_dashboard', False) and 'last_filter_result' in st.session_state and 'last_query' in st.session_state:
+        st.session_state.show_last_dashboard = False  # Reset flag
+        with st.spinner("🔄 Refreshing dashboard..."):
+            dashboard_gen.generate(st.session_state.last_filter_result, st.session_state.last_query)
         
-        st.success(f"✅ Dashboard generated in {total_time:.2f}s")
+        # Show filter extraction results if in dev mode
+        if dev_mode and 'last_filter_result' in st.session_state:
+            with st.expander("🔍 Stage 1: Filter Extraction Results"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**User Query:**")
+                    st.code(st.session_state.last_query, language="text")
+                with col2:
+                    st.markdown("**Extracted Filters:**")
+                    st.json(st.session_state.last_filter_result.get('filters', {}))
         
+        if 'last_total_time' in st.session_state:
+            st.success(f"✅ Dashboard generated in {st.session_state.last_total_time:.2f}s")
+    
     else:
-        # Do not auto-generate. Prompt user to click Generate.
-        if user_query and not run_button:
-            st.info("Type your query and click 'Generate' to build the dashboard.")
-        else:
-            st.info("No query submitted. Enter a query on the left and click 'Generate' to start.")
+        # Show welcome message if no queries yet
+        if not st.session_state.chat_history:
+            st.info("👋 Welcome! Ask me anything about your SAP data. Try clicking on an example query or type your own question below.")
     
     # Developer Console (if enabled)
     if dev_mode:
