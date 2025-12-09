@@ -36,6 +36,17 @@ def render_chat_history(chat_history: List[Dict[str, str]]):
     st.markdown("---")
 
 
+def _handle_followup_click(question: str):
+    """Callback handler for follow-up question clicks"""
+    st.session_state.user_input_value = question
+    st.session_state.current_query = question
+    st.session_state.process_query = True
+    # Add user message to chat history immediately so sidebar shows it on rerun
+    st.session_state.chat_history.append({'role': 'user', 'content': question})
+    # Generate new follow-up questions immediately
+    if 'classifier' in st.session_state:
+        st.session_state.followup_questions = st.session_state.classifier.generate_followup_questions(question)
+
 def render_followup_questions(followup_questions: List[str]):
     """Render follow-up question buttons"""
     if not followup_questions:
@@ -43,12 +54,24 @@ def render_followup_questions(followup_questions: List[str]):
     
     st.markdown("#### Suggested Follow-ups")
     for idx, question in enumerate(followup_questions):
-        if st.button(question, key=f"followup_{idx}"):
-            st.session_state.user_input_value = question
-            st.session_state.current_query = question
-            st.session_state.process_query = True
-            st.rerun()
+        st.button(
+            question, 
+            key=f"followup_{idx}",
+            on_click=_handle_followup_click,
+            args=(question,)
+        )
 
+
+def _handle_example_click(example: str):
+    """Callback handler for example query clicks"""
+    st.session_state.user_input_value = example
+    st.session_state.current_query = example
+    st.session_state.process_query = True
+    # Add user message to chat history immediately so sidebar shows it on rerun
+    st.session_state.chat_history.append({'role': 'user', 'content': example})
+    # Generate follow-up questions immediately
+    if 'classifier' in st.session_state:
+        st.session_state.followup_questions = st.session_state.classifier.generate_followup_questions(example)
 
 def render_example_queries():
     """Render example query buttons"""
@@ -61,11 +84,12 @@ def render_example_queries():
     ]
     
     for example in example_queries:
-        if st.button(example, key=f"example_{example}"):
-            st.session_state.user_input_value = example
-            st.session_state.current_query = example
-            st.session_state.process_query = True
-            st.rerun()
+        st.button(
+            example, 
+            key=f"example_{example}",
+            on_click=_handle_example_click,
+            args=(example,)
+        )
 
 
 def render_query_input() -> str:
@@ -93,19 +117,40 @@ def render_query_input() -> str:
     if user_query:
         st.session_state.current_query = user_query
     
+    def _handle_send():
+        """Callback for send button"""
+        if st.session_state.get('current_query'):
+            query = st.session_state.current_query
+            st.session_state.process_query = True
+            # Add user message to chat history immediately so sidebar shows it on rerun
+            st.session_state.chat_history.append({'role': 'user', 'content': query})
+            # Generate follow-up questions immediately
+            if 'classifier' in st.session_state:
+                st.session_state.followup_questions = st.session_state.classifier.generate_followup_questions(query)
+    
+    def _handle_clear():
+        """Callback for clear button"""
+        st.session_state.chat_history = []
+        st.session_state.followup_questions = []
+        st.session_state.user_input_value = ""
+        st.session_state.current_query = ""
+        st.session_state.input_key_counter = st.session_state.get('input_key_counter', 0) + 1
+    
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("➤ Send", key="send_btn", use_container_width=True):
-            if user_query:
-                st.session_state.process_query = True
-                st.rerun()
+        st.button(
+            "➤ Send", 
+            key="send_btn", 
+            use_container_width=True,
+            on_click=_handle_send
+        )
     with col2:
-        if st.button("🗑️ Clear", key="clear_btn", use_container_width=True):
-            st.session_state.chat_history = []
-            st.session_state.followup_questions = []
-            st.session_state.user_input_value = ""
-            st.session_state.current_query = ""
-            st.rerun()
+        st.button(
+            "🗑️ Clear", 
+            key="clear_btn", 
+            use_container_width=True,
+            on_click=_handle_clear
+        )
     
     return user_query
 

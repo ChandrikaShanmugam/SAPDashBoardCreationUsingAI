@@ -1763,6 +1763,9 @@ def main():
         classifier = IntentClassifier(data)
         dashboard_gen = DashboardGenerator(data, classifier)
         
+        # Store classifier in session state for callbacks to access
+        st.session_state.classifier = classifier
+        
         init_time = time.time() - init_start
         st.session_state.performance_metrics['initialization_time'] = init_time
         logger.info(f"✓ Application initialized in {init_time:.2f} seconds")
@@ -1814,26 +1817,13 @@ def main():
 
     # Process Query
     if should_run:
-        # Add user message to chat history
-        st.session_state.chat_history.append({'role': 'user', 'content': user_query})
-        
         # Show animated loading indicator
         with st.spinner("🔄 Processing your query..."):
             try:
                 query_start = time.time()
                 
-                # PARALLEL EXECUTION: Stage 1 (Filter Extraction) + Follow-up Questions Generation
-                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                    # Submit both tasks in parallel
-                    filter_future = executor.submit(classifier.classify, user_query)
-                    followup_future = executor.submit(classifier.generate_followup_questions, user_query)
-                    
-                    # Wait for both to complete
-                    filter_result = filter_future.result()
-                    followup_questions = followup_future.result()
-                    
-                    # Store follow-up questions in session state
-                    st.session_state.followup_questions = followup_questions
+                # STAGE 1: Filter Extraction (follow-ups already generated in callback)
+                filter_result = classifier.classify(user_query)
                 
                 classification_time = time.time() - query_start
                 st.session_state.performance_metrics['filter_extraction_time'] = classification_time
@@ -1841,7 +1831,7 @@ def main():
                 # Log API call
                 st.session_state.api_calls.append({
                     'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    'type': 'Stage 1: Filter Extraction + Follow-up Questions',
+                    'type': 'Stage 1: Filter Extraction',
                     'query': user_query,
                     'response': filter_result,
                     'duration': f"{classification_time:.2f}s"
@@ -1860,17 +1850,15 @@ def main():
                 st.session_state.last_filter_result = filter_result
                 st.session_state.last_total_time = total_time
                 st.session_state.last_query = user_query
-                st.session_state.show_last_dashboard = True
                 
                 # Add assistant response to chat history
                 st.session_state.chat_history.append({'role': 'assistant', 'content': f"Dashboard generated successfully in {total_time:.2f}s"})
                 
-                # Clear input and state, then rerun to refresh sidebar
+                # Clear input and state
                 st.session_state.user_input_value = ""
                 st.session_state.input_key_counter += 1
                 st.session_state.current_query = ""
                 st.session_state.process_query = False
-                st.rerun()
             
             except Exception as e:
                 st.session_state.chat_history.append({'role': 'assistant', 'content': f"Error: {str(e)}"})
@@ -1879,7 +1867,6 @@ def main():
                 st.session_state.input_key_counter += 1
                 st.session_state.current_query = ""
                 st.session_state.process_query = False
-                st.rerun()
         
         # Show performance metrics
         if show_metrics and st.session_state.performance_metrics:
@@ -1899,11 +1886,10 @@ def main():
         if 'last_total_time' in st.session_state:
             st.success(f"✅ Dashboard generated in {st.session_state.last_total_time:.2f}s")
     
-    # Re-display last dashboard after rerun (to show updated sidebar with chat history and followup questions)
-    elif st.session_state.get('show_last_dashboard', False) and 'last_filter_result' in st.session_state and 'last_query' in st.session_state:
-        st.session_state.show_last_dashboard = False  # Reset flag
-        with st.spinner("🔄 Refreshing dashboard..."):
-            dashboard_gen.generate(st.session_state.last_filter_result, st.session_state.last_query)
+    # After rerun (sidebar is now updated), display the last dashboard
+    elif st.session_state.get('sidebar_updated', False) and 'last_filter_result' in st.session_state and 'last_query' in st.session_state:
+        # Display cached dashboard without regenerating
+        dashboard_gen.generate(st.session_state.last_filter_result, st.session_state.last_query)
         
         # Show filter extraction results if in dev mode
         if dev_mode and 'last_filter_result' in st.session_state:
