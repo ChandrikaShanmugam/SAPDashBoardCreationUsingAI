@@ -32,6 +32,26 @@ from exception_handler import (
 from prompt_manager import PromptTemplateManager
 import concurrent.futures
 
+# Import UI components
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from ui.styles import get_custom_css
+from ui.components import (
+    render_sidebar_header,
+    render_chat_history,
+    render_followup_questions,
+    render_example_queries,
+    render_query_input,
+    render_settings,
+    render_sidebar_footer,
+    render_performance_metrics,
+    render_debug_tabs,
+    render_metrics_columns,
+    show_info_message,
+    show_success_message,
+    show_warning_message,
+    show_error_message
+)
+
 # Setup logging
 logging.basicConfig(
     level=logging.DEBUG,
@@ -1719,73 +1739,8 @@ class DashboardGenerator:
 def main():
     st.set_page_config(page_title="SAP Dashboard Agent", page_icon="📊", layout="wide")
     
-    # Custom CSS for chat-like interface with 30-70 split
-    st.markdown("""
-    <style>
-    .stTextInput > div > div > input {
-        border-radius: 20px;
-    }
-    .chat-message {
-        padding: 10px 15px;
-        border-radius: 15px;
-        margin: 8px 0;
-        font-size: 14px;
-    }
-    .user-message {
-        background-color: #e3f2fd;
-        text-align: left;
-    }
-    .assistant-message {
-        background-color: #f5f5f5;
-        text-align: left;
-    }
-    [data-testid="stSidebar"] {
-        min-width: 30%;
-        max-width: 30%;
-    }
-    [data-testid="stSidebar"] > div:first-child {
-        padding-top: 0rem !important;
-        padding-bottom: 0rem !important;
-    }
-    /* Pill-style buttons for examples and follow-ups */
-    .stButton button {
-        width: 100%;
-        border-radius: 25px !important;
-        text-align: left;
-        padding: 6px 16px !important;
-        border: 2px solid #4A90E2 !important;
-        background-color: white !important;
-        color: #4A90E2 !important;
-        font-size: 10px !important;
-        margin-bottom: 6px !important;
-        height: auto !important;
-        min-height: 32px !important;
-        line-height: 1.2 !important;
-    }
-    .stButton button:hover {
-        background-color: #E3F2FD !important;
-        border-color: #2E7BD6 !important;
-    }
-    /* Remove spacing and padding aggressively */
-    .element-container {
-        margin-bottom: 0 !important;
-        padding: 0 !important;
-    }
-    div[data-testid="stVerticalBlock"] > div {
-        gap: 0 !important;
-        padding: 0 !important;
-    }
-    [data-testid="stSidebar"] .element-container {
-        padding: 0 !important;
-        margin: 0 !important;
-    }
-    [data-testid="stSidebar"] h4 {
-        margin-top: 0.3rem !important;
-        margin-bottom: 0.3rem !important;
-        font-size: 0.95rem !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    # Apply custom CSS from styles module
+    st.markdown(get_custom_css(), unsafe_allow_html=True)
     
     # Initialize session state for chat history
     if 'chat_history' not in st.session_state:
@@ -1820,93 +1775,24 @@ def main():
     # SIDEBAR - 30% Left Side for Chat and Input
     with st.sidebar:
         # TOP SECTION - SAP Assistant Header (always visible at top)
-        st.title("🤖 SAP Assistant")
-        st.markdown("Ask questions about your SAP data.")
-        
+        render_sidebar_header()
         
         # MIDDLE SECTION - Scrollable content
         # Show conversation history only if chat exists
-        if st.session_state.chat_history:
-            st.markdown("### 💬 Conversation")
-            with st.container(height=300):
-                for i, msg in enumerate(st.session_state.chat_history):
-                    if msg['role'] == 'user':
-                        st.markdown(f'<div class="chat-message user-message"><b>You:</b> {msg["content"]}</div>', unsafe_allow_html=True)
-                    else:
-                        st.markdown(f'<div class="chat-message assistant-message"><b>Assistant:</b> {msg["content"]}</div>', unsafe_allow_html=True)
-            st.markdown("---")
+        render_chat_history(st.session_state.chat_history)
         
         # Follow-up Questions (only if they exist)
-        if st.session_state.followup_questions:
-            st.markdown("#### Suggested Follow-ups")
-            for idx, question in enumerate(st.session_state.followup_questions):
-                if st.button(question, key=f"followup_{idx}"):
-                    st.session_state.user_input_value = question
-                    st.session_state.current_query = question
-                    st.session_state.process_query = True
-                    st.rerun()
+        render_followup_questions(st.session_state.followup_questions)
         
         # Example queries (only show when no conversation exists)
         if not st.session_state.chat_history:
-            st.markdown("#### 💡 Example Queries")
-            example_queries = [
-                "Show me authorized to sell details",
-                "What are the sales exceptions?",
-                "Give me plant-wise analysis",
-                "Show overview of all data"
-            ]
-            
-            for example in example_queries:
-                if st.button(example, key=f"example_{example}"):
-                    st.session_state.user_input_value = example
-                    st.session_state.current_query = example
-                    st.session_state.process_query = True
-                    st.rerun()
+            render_example_queries()
         
         # BOTTOM SECTION - Ask a Question (always visible at bottom)
-        st.markdown("### 💬 Ask a Question")
-        
-        # Initialize input value in session state
-        if 'user_input_value' not in st.session_state:
-            st.session_state.user_input_value = ""
-        if 'process_query' not in st.session_state:
-            st.session_state.process_query = False
-        if 'input_key_counter' not in st.session_state:
-            st.session_state.input_key_counter = 0
-        
-        user_query = st.text_area(
-            "Your question:",
-            value=st.session_state.user_input_value,
-            placeholder="e.g., Show me authorized to sell details",
-            height=100,
-            key=f"user_query_input_{st.session_state.input_key_counter}",
-            label_visibility="collapsed"
-        )
-        
-        # Store current query - text area value takes precedence unless it's empty during processing
-        if user_query:
-            st.session_state.current_query = user_query
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("➤ Send", key="send_btn", use_container_width=True):
-                if user_query:
-                    st.session_state.process_query = True
-                    st.rerun()
-        with col2:
-            if st.button("🗑️ Clear", key="clear_btn", use_container_width=True):
-                st.session_state.chat_history = []
-                st.session_state.followup_questions = []
-                st.session_state.user_input_value = ""
-                st.session_state.current_query = ""
-                st.rerun()
-        
-        st.markdown("---")
+        user_query = render_query_input()
         
         # Settings at bottom (expandable)
-        with st.expander("⚙️ Settings", expanded=False):
-            dev_mode = st.checkbox("🔧 Developer Mode", value=False, key="dev_mode_checkbox", help="Show API requests, console logs, and debug info")
-            show_metrics = st.checkbox("📊 Show Performance Metrics", value=False, key="show_metrics_checkbox")
+        dev_mode, show_metrics = render_settings()
     
     # MAIN AREA - 70% Right Side for Dashboard
     st.title("📊 Dashboard")
@@ -1995,6 +1881,10 @@ def main():
                 st.session_state.process_query = False
                 st.rerun()
         
+        # Show performance metrics
+        if show_metrics and st.session_state.performance_metrics:
+            render_performance_metrics(st.session_state.performance_metrics)
+        
         # Show filter extraction results after generation (outside spinner)
         if dev_mode and 'last_filter_result' in st.session_state:
             with st.expander("🔍 Stage 1: Filter Extraction Results"):
@@ -2037,117 +1927,10 @@ def main():
     # Developer Console (if enabled)
     if dev_mode:
         st.markdown("---")
-        
-        # Create tabs for different debug views
-        debug_tabs = st.tabs(["🔍 API Requests", "📊 Performance", "📝 Console Logs", "💾 Data Info"])
-        
-        # Tab 1: API Requests
-        with debug_tabs[0]:
-            st.subheader("🔍 API Request History")
-            if st.session_state.api_calls:
-                for i, call in enumerate(reversed(st.session_state.api_calls[-10:])):  # Last 10 calls
-                    with st.expander(f"Call #{len(st.session_state.api_calls)-i} - {call['timestamp']} ({call['duration']})"):
-                        st.markdown(f"**Type:** {call['type']}")
-                        st.markdown("**Request:**")
-                        st.code(call['query'], language="text")
-                        st.markdown("**Response:**")
-                        st.json(call['response'])
-            else:
-                st.info("No API calls yet. Make a query to see details.")
-        
-        # Tab 2: Performance Metrics
-        with debug_tabs[1]:
-            st.subheader("📊 Performance Metrics")
-            if st.session_state.performance_metrics:
-                metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
-                
-                with metrics_col1:
-                    if 'initialization_time' in st.session_state.performance_metrics:
-                        st.metric("Init Time", f"{st.session_state.performance_metrics['initialization_time']:.2f}s")
-                
-                with metrics_col2:
-                    if 'filter_extraction_time' in st.session_state.performance_metrics:
-                        st.metric("Stage 1: Filter Extraction", f"{st.session_state.performance_metrics['filter_extraction_time']:.2f}s")
-                
-                with metrics_col3:
-                    if 'dashboard_generation_time' in st.session_state.performance_metrics:
-                        st.metric("Dashboard Gen", f"{st.session_state.performance_metrics['dashboard_generation_time']:.2f}s")
-                
-                if 'total_time' in st.session_state.performance_metrics:
-                    st.markdown("---")
-                    st.markdown(f"**Total Query Processing Time:** `{st.session_state.performance_metrics['total_time']:.2f}s`")
-                
-                # Performance breakdown chart
-                if 'filter_extraction_time' in st.session_state.performance_metrics:
-                    perf_data = pd.DataFrame([
-                        {'Stage': 'Stage 1: Filter Extraction', 'Time (s)': st.session_state.performance_metrics.get('filter_extraction_time', 0)},
-                        {'Stage': 'Stage 2: Chart Generation + Render', 'Time (s)': st.session_state.performance_metrics.get('dashboard_generation_time', 0)}
-                    ])
-                    fig = px.bar(perf_data, x='Stage', y='Time (s)', title="Performance Breakdown")
-                    st.plotly_chart(fig, width='stretch')
-            else:
-                st.info("No performance metrics yet.")
-        
-        # Tab 3: Console Logs
-        with debug_tabs[2]:
-            st.subheader("📝 Console Logs")
-            st.markdown("Check your terminal for detailed logs or enable log streaming below:")
-            
-            log_level = st.selectbox("Log Level", ["DEBUG", "INFO", "WARNING", "ERROR"])
-            
-            st.code("""
-Terminal logs are displayed in your console where you ran:
-python3 -m streamlit run sap_dashboard_agent.py
-
-Look for:
-- Data loading progress
-- LLM request/response details
-- Performance timings
-- Error traces
-            """, language="bash")
-        
-        # Tab 4: Data Info
-        with debug_tabs[3]:
-            st.subheader("💾 Loaded Data Information")
-            
-            # Build data_info dynamically based on what's actually loaded
-            data_info = {}
-            
-            # Check which datasets are available and add them to data_info
-            if 'exception_report' in data and data['exception_report'] is not None:
-                data_info['Sales Order Exception Report'] = {
-                    'records': len(data['exception_report']),
-                    'columns': list(data['exception_report'].columns),
-                    'memory': f"{data['exception_report'].memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB"
-                }
-            
-            if 'location_sequence' in data and data['location_sequence'] is not None:
-                data_info['A1P Location Sequence'] = {
-                    'records': len(data['location_sequence']),
-                    'columns': list(data['location_sequence'].columns),
-                    'memory': f"{data['location_sequence'].memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB"
-                }
-            
-            for dataset_name, info in data_info.items():
-                with st.expander(f"📁 {dataset_name}"):
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric("Records", f"{info['records']:,}")
-                    with col2:
-                        st.metric("Memory Usage", info['memory'])
-                    st.markdown("**Columns:**")
-                    st.write(", ".join(info['columns']))
-            
-            # Total summary
-            total_records = sum(len(df) for df in data.values())
-            st.markdown("---")
-            st.markdown(f"**Total Records Loaded:** `{total_records:,}`")
+        render_debug_tabs(data, st.session_state.api_calls, st.session_state.logs)
     
     # Footer
-    st.sidebar.markdown("---")
-    st.sidebar.markdown(f"**Timestamp:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    if dev_mode:
-        st.sidebar.markdown("🔧 **Developer Mode Active**")
+    render_sidebar_footer(dev_mode)
 
 if __name__ == "__main__":
     main()
