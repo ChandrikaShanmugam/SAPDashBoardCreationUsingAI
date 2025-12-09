@@ -194,6 +194,16 @@ def render_query_input() -> str:
         st.session_state.user_input_value = ""
         st.session_state.current_query = ""
         st.session_state.input_key_counter = st.session_state.get('input_key_counter', 0) + 1
+        # Clear any pending futures
+        if 'followup_future' in st.session_state:
+            st.session_state.followup_future = None
+        # Clear dashboard state
+        if 'dashboard_ready' in st.session_state:
+            st.session_state.dashboard_ready = False
+        if 'last_filter_result' in st.session_state:
+            st.session_state.last_filter_result = None
+        if 'last_query' in st.session_state:
+            st.session_state.last_query = None
     
     col1, col2 = st.columns(2)
     with col1:
