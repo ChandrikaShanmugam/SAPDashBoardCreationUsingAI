@@ -439,12 +439,21 @@ Example:
             "Filter by Sold-to Name and show details"
         ]
     
-    def classify(self, query: str) -> Dict:
-        """Extract filters from user query - STAGE 1"""
+    def classify(self, query: str, previous_query: str = None, previous_filters: Dict = None) -> Dict:
+        """Extract filters from user query - STAGE 1
+        
+        Args:
+            query: Current user query
+            previous_query: Previous query for context (optional)
+            previous_filters: Previously extracted filters for context (optional)
+        """
         logger.info("=" * 80)
         logger.info("STAGE 1: FILTER EXTRACTION FROM QUERY")
         logger.info("=" * 80)
         logger.info(f"User Query: '{query}'")
+        if previous_query:
+            logger.info(f"Previous Query: '{previous_query}'")
+            logger.info(f"Previous Filters: {previous_filters}")
         
         start_time = time.time()
         
@@ -469,6 +478,20 @@ Example:
                 logger.info(f"System prompt length: {len(formatted_system_prompt)} chars")
                 logger.info("✓ Prompt includes cross-table filtering guidance")
                 
+                # Build user prompt with conversation context if available
+                user_content = query
+                if previous_query and previous_filters:
+                    context_info = f"""CONVERSATION CONTEXT:
+
+Previous Query: {previous_query}
+Previous Filters Applied: {json.dumps(previous_filters, indent=2)}
+
+Current Follow-up Query: {query}
+
+IMPORTANT: This is a follow-up question. Merge the previous filters with any new filters from the current query. Keep relevant filters from the previous context unless the user explicitly asks to change or remove them."""
+                    user_content = context_info
+                    logger.info("✓ Including conversation context in prompt")
+                
                 payload = {
                     "generation_model": "gpt-4o",
                     "max_tokens": 500,
@@ -480,7 +503,7 @@ Example:
                     "tools_choice": "none",
                     "system_prompt": formatted_system_prompt,
                     "custom_prompt": [
-                        {"role": "user", "content": query}
+                        {"role": "user", "content": user_content}
                     ],
                     "model_provider_name": "openai"
                 }
@@ -1183,22 +1206,24 @@ class DashboardGenerator:
         
         start_time = time.time()
         
-        # APPLY FILTERS TO DATA (Stage 1 complete) with multi-table support
-        if requires_join:
-            combined_data = self._apply_cross_table_filters(filter_result)
-            logger.info(f"✓ Cross-table join performed")
-        else:
-            # Determine which table(s) to use based on filters and query
-            combined_data = self._determine_and_apply_filters(filters, user_query)
-        
-        logger.info(f"Data filtered: {len(self.data['exception_report']):,} → {len(combined_data):,} records")
+        # Show initial spinner
+        with st.spinner("🔄 Processing your query..."):
+            # APPLY FILTERS TO DATA (Stage 1 complete) with multi-table support
+            if requires_join:
+                combined_data = self._apply_cross_table_filters(filter_result)
+                logger.info(f"✓ Cross-table join performed")
+            else:
+                # Determine which table(s) to use based on filters and query
+                combined_data = self._determine_and_apply_filters(filters, user_query)
+            
+            logger.info(f"Data filtered: {len(self.data['exception_report']):,} → {len(combined_data):,} records")
         
         if len(combined_data) == 0:
             st.warning("⚠️ No data found matching your filters.")
             st.info(f"**Filters Applied:** {json.dumps(filters, indent=2)}")
             return
         
-        # Display header and filter summary
+        # Display header
         st.header(f"🔍 Filtered Data Analysis")
         
         # Show cross-table query indicator
@@ -1311,7 +1336,10 @@ class DashboardGenerator:
         logger.info("=" * 80)
         
         st.markdown("---")
-        chart_config = self.classifier.generate_chart_config(user_query, combined_data, "analysis")
+        
+        # Show spinner during chart generation
+        with st.spinner("🔄 Processing your query..."):
+            chart_config = self.classifier.generate_chart_config(user_query, combined_data, "analysis")
         
         # Render charts from Stage 2
         if chart_config.get('charts'):
@@ -1753,6 +1781,12 @@ def main():
         st.session_state.api_calls = []
     if 'performance_metrics' not in st.session_state:
         st.session_state.performance_metrics = {}
+    if 'last_filters' not in st.session_state:
+        st.session_state.last_filters = None
+    if 'last_query' not in st.session_state:
+        st.session_state.last_query = None
+    if 'dashboard_ready' not in st.session_state:
+        st.session_state.dashboard_ready = False
     
     # Initialize
     try:
@@ -1787,8 +1821,8 @@ def main():
         # Follow-up Questions (only if they exist)
         render_followup_questions(st.session_state.followup_questions)
         
-        # Example queries (only show when no conversation exists)
-        if not st.session_state.chat_history:
+        # Example queries (only show when no conversation exists AND no follow-ups)
+        if not st.session_state.chat_history and not st.session_state.followup_questions:
             render_example_queries()
         
         # BOTTOM SECTION - Ask a Question (always visible at bottom)
@@ -1799,6 +1833,9 @@ def main():
     
     # MAIN AREA - 70% Right Side for Dashboard
     st.title("📊 Dashboard")
+    
+    # Create placeholder for dashboard content
+    dashboard_placeholder = st.empty()
     
     # Get current query from session state
     user_query = st.session_state.get('current_query', '')
@@ -1817,13 +1854,22 @@ def main():
 
     # Process Query
     if should_run:
+        # Note: User message already added to chat history in callback
+        
         # Show animated loading indicator
         with st.spinner("🔄 Processing your query..."):
             try:
                 query_start = time.time()
                 
                 # STAGE 1: Filter Extraction (follow-ups already generated in callback)
-                filter_result = classifier.classify(user_query)
+                # Pass previous context for follow-up questions
+                previous_query = st.session_state.get('last_query')
+                previous_filters = st.session_state.get('last_filters', {}).get('filters') if st.session_state.get('last_filters') else None
+                
+                filter_result = classifier.classify(user_query, previous_query=previous_query, previous_filters=previous_filters)
+                
+                # Store current filters for next iteration
+                st.session_state.last_filters = filter_result
                 
                 classification_time = time.time() - query_start
                 st.session_state.performance_metrics['filter_extraction_time'] = classification_time
@@ -1837,9 +1883,9 @@ def main():
                     'duration': f"{classification_time:.2f}s"
                 })
                 
-                # STAGE 2: Generate Dashboard with Charts
+                # STAGE 2: Prepare dashboard data (don't render yet)
                 dashboard_start = time.time()
-                dashboard_gen.generate(filter_result, user_query)
+                # Data processing happens here but UI rendering waits
                 dashboard_time = time.time() - dashboard_start
                 st.session_state.performance_metrics['dashboard_generation_time'] = dashboard_time
                 
@@ -1851,8 +1897,14 @@ def main():
                 st.session_state.last_total_time = total_time
                 st.session_state.last_query = user_query
                 
+                # Generate follow-up questions
+                st.session_state.followup_questions = classifier.generate_followup_questions(user_query)
+                
                 # Add assistant response to chat history
                 st.session_state.chat_history.append({'role': 'assistant', 'content': f"Dashboard generated successfully in {total_time:.2f}s"})
+                
+                # Set flag to render dashboard AFTER spinner completes
+                st.session_state.dashboard_ready = True
                 
                 # Clear input and state
                 st.session_state.user_input_value = ""
@@ -1867,6 +1919,7 @@ def main():
                 st.session_state.input_key_counter += 1
                 st.session_state.current_query = ""
                 st.session_state.process_query = False
+                st.session_state.dashboard_ready = False
         
         # Show performance metrics
         if show_metrics and st.session_state.performance_metrics:
@@ -1885,6 +1938,10 @@ def main():
         
         if 'last_total_time' in st.session_state:
             st.success(f"✅ Dashboard generated in {st.session_state.last_total_time:.2f}s")
+    
+    # Render dashboard UI only when ready flag is True (after spinner completes)
+    if st.session_state.get('dashboard_ready', False) and 'last_filter_result' in st.session_state and 'last_query' in st.session_state:
+        dashboard_gen.generate(st.session_state.last_filter_result, st.session_state.last_query)
     
     # After rerun (sidebar is now updated), display the last dashboard
     elif st.session_state.get('sidebar_updated', False) and 'last_filter_result' in st.session_state and 'last_query' in st.session_state:
