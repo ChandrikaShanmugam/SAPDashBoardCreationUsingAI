@@ -342,12 +342,21 @@ Example:
 
         return None
     
-    def classify(self, query: str) -> Dict:
+    def classify(self, query: str, conversation_history: List[Dict] = None) -> Dict:
         """Extract filters from user query - STAGE 1"""
         logger.info("=" * 80)
         logger.info("STAGE 1: FILTER EXTRACTION FROM QUERY")
         logger.info("=" * 80)
         logger.info(f"User Query: '{query}'")
+        
+        # Add conversation history context if available
+        history_context = ""
+        if conversation_history:
+            history_context = "\nConversation History:\n" + "\n".join([
+                f"Previous Query {i+1}: {item['query']}\nApplied Filters: {item['filters']}"
+                for i, item in enumerate(conversation_history[-3:])  # Last 3 interactions
+            ])
+            logger.info(f"Using conversation history: {len(conversation_history)} previous interactions")
         
         start_time = time.time()
         
@@ -372,6 +381,11 @@ Example:
                 logger.info(f"System prompt length: {len(formatted_system_prompt)} chars")
                 logger.info("✓ Prompt includes cross-table filtering guidance")
                 
+                # Include conversation history in the prompt
+                enhanced_query = query
+                if history_context:
+                    enhanced_query = f"{query}\n\n{history_context}"
+                
                 payload = {
                     "generation_model": "gpt-4o",
                     "max_tokens": 500,
@@ -383,11 +397,11 @@ Example:
                     "tools_choice": "none",
                     "system_prompt": formatted_system_prompt,
                     "custom_prompt": [
-                        {"role": "user", "content": query}
+                        {"role": "user", "content": enhanced_query}
                     ],
                     "model_provider_name": "openai"
                 }
-                logger.info(f"Sending query: '{query}'")
+                logger.info(f"Sending enhanced query with history: '{enhanced_query}'")
                 resp = invoke_llm(payload)
                 logger.info(f"Raw API response: {resp}")
                 
@@ -454,12 +468,21 @@ Example:
             logger.info("=" * 80)
             return fallback_result
     
-    def generate_chart_config(self, query: str, filtered_data: pd.DataFrame, intent: str) -> Dict:
+    def generate_chart_config(self, query: str, filtered_data: pd.DataFrame, intent: str, conversation_history: List[Dict] = None) -> Dict:
         """Generate chart configuration based on filtered data - Stage 2"""
         logger.info("=" * 80)
         logger.info("STAGE 2: DYNAMIC CHART GENERATION")
         logger.info("=" * 80)
         logger.info(f"Filtered data shape: {filtered_data.shape}")
+        
+        # Add conversation history context
+        history_context = ""
+        if conversation_history:
+            history_context = "\nConversation History:\n" + "\n".join([
+                f"Previous Query {i+1}: {item['query']}\nApplied Filters: {item['filters']}"
+                for i, item in enumerate(conversation_history[-3:])  # Last 3 interactions
+            ])
+            logger.info(f"Using conversation history for chart generation: {len(conversation_history)} previous interactions")
         
         start_time = time.time()
         
@@ -513,6 +536,11 @@ Example:
                     detail_columns=', '.join(detail_cols) if detail_cols else ', '.join(actual_columns[:10])
                 )
                 
+                # Include conversation history in the query
+                enhanced_query = f"{query}\n\nData Sample:\n{json.dumps(data_sample, indent=2)}"
+                if history_context:
+                    enhanced_query = f"{query}\n\n{history_context}\n\nData Sample:\n{json.dumps(data_sample, indent=2)}"
+                
                 payload = {
                     "generation_model": "gpt-4o",
                     "max_tokens": 1500,
@@ -524,7 +552,7 @@ Example:
                     "tools_choice": "none",
                     "system_prompt": formatted_system_prompt,
                     "custom_prompt": [
-                        {"role": "user", "content": f"{query}\n\nData Sample:\n{json.dumps(data_sample, indent=2)}"}
+                        {"role": "user", "content": enhanced_query}
                     ],
                     "model_provider_name": "openai"
                 }
@@ -1072,11 +1100,20 @@ class DashboardGenerator:
             logger.error(f"Error rendering chart: {str(e)}")
             st.error(f"Could not render {chart_type} chart: {str(e)}")
         
-    def generate(self, filter_result: Dict, user_query: str):
+    def generate(self, filter_result: Dict, user_query: str, conversation_history: List[Dict] = None):
         """Generate dashboard using two-stage workflow: filters already extracted, now apply and visualize"""
         logger.info("=" * 80)
         logger.info("APPLYING FILTERS AND GENERATING DASHBOARD")
         logger.info("=" * 80)
+        
+        # Add conversation history context for chart generation
+        history_context = ""
+        if conversation_history:
+            history_context = "\nConversation History:\n" + "\n".join([
+                f"Previous Query {i+1}: {item['query']}\nApplied Filters: {item['filters']}"
+                for i, item in enumerate(conversation_history[-3:])  # Last 3 interactions
+            ])
+            logger.info(f"Using conversation history for chart generation: {len(conversation_history)} previous interactions")
         
         filters = filter_result.get('filters', {})
         requires_join = filter_result.get('requires_join', False)
@@ -1214,7 +1251,7 @@ class DashboardGenerator:
         logger.info("=" * 80)
         
         st.markdown("---")
-        chart_config = self.classifier.generate_chart_config(user_query, combined_data, "analysis")
+        chart_config = self.classifier.generate_chart_config(user_query, combined_data, "analysis", conversation_history)
         
         # Render charts from Stage 2
         if chart_config.get('charts'):
@@ -1636,6 +1673,100 @@ class DashboardGenerator:
         st.info("💡 Try asking specific questions like: 'Show me plant 7001 data' or 'I want active materials for plant 7001'")
 
 # ===========================
+# FOLLOW-UP QUESTION GENERATION
+# ===========================
+
+def generate_follow_up_questions(user_query: str, conversation_history: List[Dict], data_summary: Dict) -> List[str]:
+    """Generate follow-up questions based on user query and conversation history"""
+    logger.info("Generating follow-up questions...")
+    
+    # Create context from conversation history
+    history_context = ""
+    if conversation_history:
+        history_context = "\nPrevious conversation:\n" + "\n".join([
+            f"User: {item['query']}\nAssistant: Generated dashboard for {item['query']}"
+            for item in conversation_history[-3:]  # Last 3 interactions
+        ])
+    
+    # Create data summary context
+    data_context = f"""
+Available data summary:
+- Total records: {data_summary.get('total_records', 'Unknown')}
+- Tables: {', '.join(data_summary.get('tables', []))}
+- Key columns: Plant, Material, Auth Sell Flag Description, Material Status, etc.
+"""
+    
+    follow_up_prompt = f"""You are a SAP data analyst helping users explore their data. Based on the user's current query and conversation history, suggest 4 relevant follow-up questions that would help them gain deeper insights.
+
+Current user query: "{user_query}"
+
+{history_context}
+
+{data_context}
+
+Generate 4 follow-up questions that are:
+1. Specific and actionable
+2. Related to the current analysis
+3. Help explore different aspects of the data
+4. Use natural language
+
+Return only a JSON array of 4 question strings, no additional text.
+
+Example format:
+["What are the top materials by quantity?", "Show me authorization issues by plant", "How many active materials do we have?", "What are the sales exceptions?"]"""
+
+    try:
+        payload = {
+            "generation_model": "gpt-4o",
+            "max_tokens": 300,
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "presence_penalty": 0,
+            "frequency_penalty": 0,
+            "tools": [],
+            "tools_choice": "none",
+            "system_prompt": "You are a helpful assistant that generates relevant follow-up questions for data analysis.",
+            "custom_prompt": [
+                {"role": "user", "content": follow_up_prompt}
+            ],
+            "model_provider_name": "openai"
+        }
+        
+        resp = invoke_llm(payload)
+        
+        if isinstance(resp, dict) and 'response' in resp:
+            response_text = resp['response']
+            # Clean up response
+            if '```json' in response_text:
+                response_text = response_text.split('```json')[1].split('```')[0].strip()
+            elif '```' in response_text:
+                response_text = response_text.split('```')[1].split('```')[0].strip()
+            
+            questions = json.loads(response_text)
+            if isinstance(questions, list) and len(questions) >= 4:
+                logger.info(f"Generated {len(questions)} follow-up questions")
+                return questions[:4]  # Return first 4
+            else:
+                logger.warning("Invalid follow-up questions format, using defaults")
+                return get_default_follow_up_questions()
+        else:
+            logger.warning("No valid response for follow-up questions, using defaults")
+            return get_default_follow_up_questions()
+            
+    except Exception as e:
+        logger.error(f"Error generating follow-up questions: {str(e)}")
+        return get_default_follow_up_questions()
+
+def get_default_follow_up_questions() -> List[str]:
+    """Return default follow-up questions"""
+    return [
+        "Show me authorized to sell details",
+        "What are the sales exceptions?",
+        "Give me plant-wise analysis",
+        "Show overview of all data"
+    ]
+
+# ===========================
 # 4. MAIN APPLICATION
 # ===========================
 
@@ -1645,18 +1776,59 @@ def main():
     st.title("🤖 SAP Intelligent Dashboard Generator")
     st.markdown("Ask questions in natural language and get dynamic dashboards!")
     
+    # Handle clear data flag before initializing session state
+    if st.session_state.get('clear_all_data', False):
+        # Clear all relevant session state
+        keys_to_clear = [
+            'conversation_history', 'interaction_count', 'follow_up_questions',
+            'user_query_text_area', 'last_run_query', 'performance_metrics',
+            'logs', 'api_calls', 'clear_all_data'
+        ]
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
+        # Set flag to skip normal initialization
+        skip_initialization = True
+    else:
+        skip_initialization = False
+    
+    # Essential session state that must always exist (even after clearing)
+    if 'performance_metrics' not in st.session_state:
+        st.session_state.performance_metrics = {}
+    if 'logs' not in st.session_state:
+        st.session_state.logs = []
+    if 'api_calls' not in st.session_state:
+        st.session_state.api_calls = []
+    if 'user_query_text_area' not in st.session_state:
+        st.session_state.user_query_text_area = ""
+        
     # Sidebar - Developer Mode Toggle
     st.sidebar.header("⚙️ Settings")
     dev_mode = st.sidebar.checkbox("🔧 Developer Mode", value=False, help="Show API requests, console logs, and debug info")
     show_metrics = st.sidebar.checkbox("📊 Show Performance Metrics", value=False)
     
-    # Session state for logging
-    if 'logs' not in st.session_state:
-        st.session_state.logs = []
-    if 'api_calls' not in st.session_state:
-        st.session_state.api_calls = []
-    if 'performance_metrics' not in st.session_state:
-        st.session_state.performance_metrics = {}
+    # Session state initialization (skip if clearing data)
+    if not skip_initialization:
+        # Session state for logging
+        if 'logs' not in st.session_state:
+            st.session_state.logs = []
+        if 'api_calls' not in st.session_state:
+            st.session_state.api_calls = []
+        if 'performance_metrics' not in st.session_state:
+            st.session_state.performance_metrics = {}
+        
+        # Session state for conversation history and follow-up questions
+        if 'conversation_history' not in st.session_state:
+            st.session_state.conversation_history = []
+        if 'interaction_count' not in st.session_state:
+            st.session_state.interaction_count = 0
+        if 'follow_up_questions' not in st.session_state:
+            st.session_state.follow_up_questions = [
+                "Show me authorized to sell details",  # Example Query 2 as requested
+                "What are the sales exceptions?",
+                "Give me plant-wise analysis",
+                "Show overview of all data"
+            ]
     
     # Initialize
     try:
@@ -1678,23 +1850,32 @@ def main():
     
     # User Input
     st.sidebar.header("🎯 Ask Your Question")
-    # Example queries
-    st.sidebar.markdown("### 💡 Example Queries:")
-    example_queries = [
-        "Show me authorized to sell details",
-        "What are the sales exceptions?",
-        "Give me plant-wise analysis",
-        "Show overview of all data"
-    ]
+    
+    # Dynamic follow-up questions based on interaction count
+    if st.session_state.get('interaction_count', 0) == 0:
+        st.sidebar.markdown("### 💡 Example Queries:")
+        display_questions = st.session_state.get('follow_up_questions', [
+            "Show me authorized to sell details",
+            "What are the sales exceptions?",
+            "Give me plant-wise analysis",
+            "Show overview of all data"
+        ])  # Show all example queries initially
+    else:
+        st.sidebar.markdown("### 💡 Follow-up Questions:")
+        display_questions = st.session_state.get('follow_up_questions', [])[:4]  # Show generated follow-up questions
 
     def set_example_query(example):
         st.session_state.user_query_text_area = example
+        # Clear last run query so the same query can be run again
+        if 'last_run_query' in st.session_state:
+            st.session_state.last_run_query = None
 
-    for example in example_queries:
-        st.sidebar.button(example, key=example, on_click=set_example_query, args=(example,))
+    for question in display_questions:
+        st.sidebar.button(question, key=question, on_click=set_example_query, args=(question,))
 
     user_query = st.sidebar.text_area(
         "Enter your query:",
+        value=st.session_state.get('user_query_text_area', ''),
         placeholder="e.g., Show me authorized to sell details\nWhat are the sales exceptions?\nGive me plant-wise analysis",
         height=100,
         key="user_query_text_area"
@@ -1708,6 +1889,12 @@ def main():
         run_button = st.button("Generate", use_container_width=True)
     st.sidebar.caption("Enter a query then click 'Generate' (click an example to populate the query)")
     
+    # Clear Data button
+    if st.sidebar.button("🧹 Clear Data", use_container_width=True, help="Clear conversation history and reset to example queries"):
+        # Set clear flag instead of modifying widget session state directly
+        st.session_state.clear_all_data = True
+        st.rerun()
+    
     
     # Developer Mode Panel
     if dev_mode:
@@ -1720,6 +1907,17 @@ def main():
         
         if st.sidebar.button("🔄 Refresh Data"):
             st.cache_data.clear()
+            st.rerun()
+        
+        if st.sidebar.button("💬 Clear Conversation History"):
+            st.session_state.conversation_history = []
+            st.session_state.interaction_count = 0
+            st.session_state.follow_up_questions = [
+                "Show me authorized to sell details",
+                "What are the sales exceptions?",
+                "Give me plant-wise analysis",
+                "Show overview of all data"
+            ]
             st.rerun()
     
     # Manage run state to avoid re-running on every rerender
@@ -1756,8 +1954,24 @@ def main():
         try:
             query_start = time.time()
             
-            # STAGE 1: Extract Filters
-            filter_result = classifier.classify(user_query)
+            # Update interaction count
+            if 'interaction_count' not in st.session_state:
+                st.session_state.interaction_count = 0
+            st.session_state.interaction_count += 1
+            
+            # Prepare conversation history for LLM context
+            if 'conversation_history' not in st.session_state:
+                st.session_state.conversation_history = []
+            conversation_history = st.session_state.conversation_history
+            
+            # Initialize other session state if needed
+            if 'performance_metrics' not in st.session_state:
+                st.session_state.performance_metrics = {}
+            if 'api_calls' not in st.session_state:
+                st.session_state.api_calls = []
+            
+            # STAGE 1: Extract Filters (with conversation history)
+            filter_result = classifier.classify(user_query, conversation_history)
             classification_time = time.time() - query_start
             st.session_state.performance_metrics['filter_extraction_time'] = classification_time
             
@@ -1770,14 +1984,43 @@ def main():
                 'duration': f"{classification_time:.2f}s"
             })
             
-            # STAGE 2: Generate Dashboard with Charts
+            # Generate follow-up questions in parallel
+            follow_up_start = time.time()
+            data_summary = {
+                'total_records': sum(len(df) for df in data.values()),
+                'tables': list(data.keys())
+            }
+            new_follow_up_questions = generate_follow_up_questions(user_query, conversation_history, data_summary)
+            follow_up_time = time.time() - follow_up_start
+            st.session_state.performance_metrics['follow_up_generation_time'] = follow_up_time
+            
+            # Update follow-up questions for next interaction
+            st.session_state.follow_up_questions = new_follow_up_questions
+            
+            # Log follow-up generation
+            st.session_state.api_calls.append({
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'type': 'Follow-up Questions Generation',
+                'query': user_query,
+                'response': new_follow_up_questions,
+                'duration': f"{follow_up_time:.2f}s"
+            })
+            
+            # STAGE 2: Generate Dashboard with Charts (with conversation history)
             dashboard_start = time.time()
-            dashboard_gen.generate(filter_result, user_query)
+            dashboard_gen.generate(filter_result, user_query, conversation_history)
             dashboard_time = time.time() - dashboard_start
             st.session_state.performance_metrics['dashboard_generation_time'] = dashboard_time
             
             total_time = time.time() - query_start
             st.session_state.performance_metrics['total_time'] = total_time
+            
+            # Update conversation history
+            st.session_state.conversation_history.append({
+                'query': user_query,
+                'filters': filter_result.get('filters', {}),
+                'timestamp': datetime.now().isoformat()
+            })
             
             # Clear loader
             loader_placeholder.empty()
@@ -1797,6 +2040,16 @@ def main():
                 st.json(filter_result.get('filters', {}))
         
         st.success(f"✅ Dashboard generated in {total_time:.2f}s")
+        
+        # Show newly generated follow-up questions immediately
+        if st.session_state.interaction_count > 0:
+            st.markdown("---")
+            st.markdown("### 💡 Suggested Follow-up Questions:")
+            cols = st.columns(2)
+            for i, question in enumerate(new_follow_up_questions[:4]):
+                col_idx = i % 2
+                with cols[col_idx]:
+                    st.button(question, key=f"followup_{i}", on_click=set_example_query, args=(question,), use_container_width=True)
         
     else:
         # Do not auto-generate. Prompt user to click Generate.
