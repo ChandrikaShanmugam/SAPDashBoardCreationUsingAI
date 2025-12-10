@@ -18,9 +18,7 @@ from .components import (
     show_info_message,
     show_success_message,
     show_warning_message,
-    show_error_message,
-    get_executor,
-    _generate_followup_async
+    show_error_message
 )
 
 __all__ = [
@@ -38,7 +36,5 @@ __all__ = [
     'show_info_message',
     'show_success_message',
     'show_warning_message',
-    'show_error_message',
-    'get_executor',
-    '_generate_followup_async'
+    'show_error_message'
 ]

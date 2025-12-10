@@ -1775,8 +1775,6 @@ def main():
         st.session_state.chat_history = []
     if 'followup_questions' not in st.session_state:
         st.session_state.followup_questions = []
-    if 'followup_future' not in st.session_state:
-        st.session_state.followup_future = None
     if 'logs' not in st.session_state:
         st.session_state.logs = []
     if 'api_calls' not in st.session_state:
@@ -1899,13 +1897,8 @@ def main():
                 st.session_state.last_total_time = total_time
                 st.session_state.last_query = user_query
                 
-                # Generate follow-up questions asynchronously using ThreadPoolExecutor
-                # Only if not already running
-                if not st.session_state.get('followup_future') or st.session_state.followup_future.done():
-                    from ui.components import get_executor, _generate_followup_async
-                    executor = get_executor()
-                    st.session_state.followup_questions = ["🔄 Generating follow-up questions..."]
-                    st.session_state.followup_future = executor.submit(_generate_followup_async, classifier, user_query)
+                # Generate follow-up questions
+                st.session_state.followup_questions = classifier.generate_followup_questions(user_query)
                 
                 # Add assistant response to chat history
                 st.session_state.chat_history.append({'role': 'assistant', 'content': f"Dashboard generated successfully in {total_time:.2f}s"})

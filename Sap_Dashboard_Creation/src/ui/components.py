@@ -7,15 +7,6 @@ import streamlit as st
 from datetime import datetime
 from typing import List, Dict, Any
 import json
-from concurrent.futures import ThreadPoolExecutor
-import time
-
-
-def get_executor():
-    """Get or create ThreadPoolExecutor for background LLM calls"""
-    if "executor" not in st.session_state:
-        st.session_state.executor = ThreadPoolExecutor(max_workers=2)
-    return st.session_state.executor
 
 
 def render_sidebar_header():
@@ -45,20 +36,6 @@ def render_chat_history(chat_history: List[Dict[str, str]]):
     st.markdown("---")
 
 
-def _generate_followup_async(classifier, question: str):
-    """Async function to generate follow-up questions without blocking UI
-    
-    Args:
-        classifier: The classifier instance (passed to avoid session_state access in thread)
-        question: The question to generate follow-ups for
-    """
-    try:
-        followup_questions = classifier.generate_followup_questions(question)
-        return followup_questions
-    except Exception as e:
-        print(f"Error generating follow-ups: {e}")
-        return []
-
 def _handle_followup_click(question: str):
     """Callback handler for follow-up question clicks"""
     st.session_state.user_input_value = question
@@ -66,40 +43,12 @@ def _handle_followup_click(question: str):
     st.session_state.process_query = True
     # Add user message to chat history immediately so sidebar shows it on rerun
     st.session_state.chat_history.append({'role': 'user', 'content': question})
-    # Generate follow-up questions asynchronously - non-blocking
-    st.session_state.followup_questions = ["🔄 Generating follow-up questions..."]
-    if not st.session_state.get('followup_future') or st.session_state.followup_future.done():
-        if 'classifier' in st.session_state:
-            executor = get_executor()
-            st.session_state.followup_future = executor.submit(_generate_followup_async, st.session_state.classifier, question)
+    # Generate follow-up questions immediately for sidebar update
+    st.session_state.followup_questions = st.session_state.classifier.generate_followup_questions(question)
+    # They will be regenerated during dashboard processing (parallel) with context
 
 def render_followup_questions(followup_questions: List[str]):
-    """Render follow-up question buttons and poll for async results"""
-    # Poll future: Update state when done (checked on each natural rerender)
-    future = st.session_state.get("followup_future")
-    
-    if future:
-        if future.done():
-            # Completed - get results and update
-            try:
-                result = future.result()
-                st.session_state.followup_questions = result
-                followup_questions = result
-            except Exception as e:
-                st.session_state.followup_questions = []
-                print(f"Error in future result: {e}")
-            # Clear the future
-            st.session_state.followup_future = None
-        else:
-            # Still running - show info and trigger periodic check
-            st.markdown("#### Suggested Follow-ups")
-            st.info("🔄 Generating follow-up questions...")
-            # Sleep briefly and rerun to check again
-            time.sleep(0.5)
-            st.rerun()
-            return
-    
-    # Render the actual questions
+    """Render follow-up question buttons"""
     if not followup_questions:
         return
     
@@ -120,12 +69,10 @@ def _handle_example_click(example: str):
     st.session_state.process_query = True
     # Add user message to chat history immediately so sidebar shows it on rerun
     st.session_state.chat_history.append({'role': 'user', 'content': example})
-    # Generate follow-up questions asynchronously - non-blocking
+    # Generate follow-up questions immediately for sidebar update
     if 'classifier' in st.session_state:
-        st.session_state.followup_questions = ["🔄 Generating follow-up questions..."]
-        if not st.session_state.get('followup_future') or st.session_state.followup_future.done():
-            executor = get_executor()
-            st.session_state.followup_future = executor.submit(_generate_followup_async, st.session_state.classifier, example)
+        st.session_state.followup_questions = st.session_state.classifier.generate_followup_questions(example)
+    # They will be regenerated during dashboard processing (parallel) with context
 
 def render_example_queries():
     """Render example query buttons"""
@@ -180,12 +127,10 @@ def render_query_input() -> str:
             st.session_state.process_query = True
             # Add user message to chat history immediately
             st.session_state.chat_history.append({'role': 'user', 'content': query})
-            # Generate follow-up questions asynchronously - non-blocking
-            st.session_state.followup_questions = ["🔄 Generating follow-up questions..."]
-            if not st.session_state.get('followup_future') or st.session_state.followup_future.done():
-                if 'classifier' in st.session_state:
-                    executor = get_executor()
-                    st.session_state.followup_future = executor.submit(_generate_followup_async, st.session_state.classifier, query)
+            # Generate follow-up questions immediately for sidebar update
+            if 'classifier' in st.session_state:
+                st.session_state.followup_questions = st.session_state.classifier.generate_followup_questions(query)
+            # They will be regenerated during dashboard processing (parallel) with context
     
     def _handle_clear():
         """Callback for clear button"""
