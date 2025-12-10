@@ -1155,16 +1155,13 @@ class DashboardGenerator:
             st.info("**Showing all data (no filters applied)**")
         
         # Show basic metrics
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         col1.metric("Total Records", f"{len(combined_data):,}")
-        
-        if 'Material' in combined_data.columns:
-            col2.metric("Unique Materials", f"{combined_data['Material'].nunique():,}")
-        if 'Plant' in combined_data.columns:
-            col3.metric("Unique Plants", f"{combined_data['Plant'].nunique():,}")
-        if 'Order Quantity Sales Unit' in combined_data.columns:
-            total_qty = combined_data['Order Quantity Sales Unit'].sum()
-            col4.metric("Total Quantity", f"{total_qty:,.0f}")
+        col2.metric("Unique Materials", f"{combined_data['Material'].nunique() if 'Material' in combined_data.columns else 0:,}")
+        col3.metric("Unique UPCs", f"{combined_data['UPC'].nunique() if 'UPC' in combined_data.columns else 0:,}")
+        col4.metric("Unique Plants", f"{combined_data['Plant'].nunique() if 'Plant' in combined_data.columns else 0:,}")
+        total_qty = combined_data['Order Quantity Sales Unit'].sum() if 'Order Quantity Sales Unit' in combined_data.columns else 0
+        col5.metric("Total Quantity", f"{total_qty:,.0f}")
         
         # Handle custom aggregations from Stage 1
         aggregations = filter_result.get('aggregations', [])
@@ -1553,12 +1550,13 @@ class DashboardGenerator:
             return
 
         # Metrics
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         col1.metric("Total Exceptions", f"{len(filtered_exceptions):,}")
         col2.metric("Unique Materials", f"{filtered_exceptions['Material'].nunique() if 'Material' in filtered_exceptions.columns else 0:,}")
-        col3.metric("Affected Plants", f"{filtered_exceptions['Plant'].nunique() if 'Plant' in filtered_exceptions.columns else 0:,}")
+        col3.metric("Unique UPCs", f"{filtered_exceptions['UPC'].nunique() if 'UPC' in filtered_exceptions.columns else 0:,}")
+        col4.metric("Affected Plants", f"{filtered_exceptions['Plant'].nunique() if 'Plant' in filtered_exceptions.columns else 0:,}")
         total_qty = filtered_exceptions['Order Quantity Sales Unit'].sum() if 'Order Quantity Sales Unit' in filtered_exceptions.columns else 0
-        col4.metric("Total Order Quantity", f"{total_qty:,.0f}")
+        col5.metric("Total Order Quantity", f"{total_qty:,.0f}")
         
         # Display custom aggregations if requested
         if aggregations and len(filtered_exceptions) > 0:
