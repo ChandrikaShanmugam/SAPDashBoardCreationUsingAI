@@ -1801,7 +1801,7 @@ def main():
         st.session_state.api_calls = []
     if 'user_query_text_area' not in st.session_state:
         st.session_state.user_query_text_area = ""
-        
+
     # Sidebar - Developer Mode Toggle
     st.sidebar.header("⚙️ Settings")
     dev_mode = st.sidebar.checkbox("🔧 Developer Mode", value=False, help="Show API requests, console logs, and debug info")
@@ -1877,7 +1877,7 @@ def main():
         "Enter your query:",
         value=st.session_state.get('user_query_text_area', ''),
         placeholder="e.g., Show me authorized to sell details\nWhat are the sales exceptions?\nGive me plant-wise analysis",
-        height=100,
+        height=150,
         key="user_query_text_area"
     )
     
