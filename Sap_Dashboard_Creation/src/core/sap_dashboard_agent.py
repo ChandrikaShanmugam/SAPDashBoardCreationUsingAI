@@ -39,6 +39,24 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout)
     ]
 )
+
+# Inject custom CSS for 30% sidebar and 70% main content
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"] {
+        min-width: 30vw;
+        max-width: 30vw;
+        width: 30vw;
+    }
+    .main .block-container {
+        max-width: 70vw;
+        margin-left: 32vw;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 logger = logging.getLogger(__name__)
 
 # ===========================
@@ -1660,10 +1678,26 @@ def main():
     
     # User Input
     st.sidebar.header("🎯 Ask Your Question")
+    # Example queries
+    st.sidebar.markdown("### 💡 Example Queries:")
+    example_queries = [
+        "Show me authorized to sell details",
+        "What are the sales exceptions?",
+        "Give me plant-wise analysis",
+        "Show overview of all data"
+    ]
+
+    def set_example_query(example):
+        st.session_state.user_query_text_area = example
+
+    for example in example_queries:
+        st.sidebar.button(example, key=example, on_click=set_example_query, args=(example,))
+
     user_query = st.sidebar.text_area(
         "Enter your query:",
         placeholder="e.g., Show me authorized to sell details\nWhat are the sales exceptions?\nGive me plant-wise analysis",
-        height=100
+        height=100,
+        key="user_query_text_area"
     )
     
     # Generate button to trigger processing (aligned to right)
@@ -1674,18 +1708,6 @@ def main():
         run_button = st.button("Generate", use_container_width=True)
     st.sidebar.caption("Enter a query then click 'Generate' (click an example to populate the query)")
     
-    # Example queries
-    st.sidebar.markdown("### 💡 Example Queries:")
-    example_queries = [
-        "Show me authorized to sell details",
-        "What are the sales exceptions?",
-        "Give me plant-wise analysis",
-        "Show overview of all data"
-    ]
-    
-    for example in example_queries:
-        if st.sidebar.button(example, key=example):
-            user_query = example
     
     # Developer Mode Panel
     if dev_mode:
@@ -1779,7 +1801,7 @@ def main():
     else:
         # Do not auto-generate. Prompt user to click Generate.
         if user_query and not run_button:
-            st.info("Type your query and click 'Generate' to build the dashboard.")
+            st.info("Click 'Generate' to build the dashboard.")
         else:
             st.info("No query submitted. Enter a query on the left and click 'Generate' to start.")
     
