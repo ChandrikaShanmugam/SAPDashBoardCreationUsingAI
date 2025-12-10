@@ -1873,7 +1873,6 @@ def main():
 
     user_query = st.sidebar.text_area(
         "Enter your query:",
-        value=st.session_state.get('user_query_text_area', ''),
         placeholder="e.g., Show me authorized to sell details\nWhat are the sales exceptions?\nGive me plant-wise analysis",
         height=150,
         key="user_query_text_area"
