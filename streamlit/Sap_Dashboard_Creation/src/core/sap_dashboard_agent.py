@@ -191,7 +191,7 @@ def load_sap_data():
         logger.info("=" * 80)
         
         data = {
-            'exception_report': exception_report,
+            'sales_order': exception_report,
             'location_sequence': location_sequence,
             'cof_inventory': cof_inventory,
             'cof_pricing': cof_pricing
