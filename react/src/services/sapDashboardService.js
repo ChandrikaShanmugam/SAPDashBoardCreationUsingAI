@@ -117,135 +117,53 @@ class SAPDashboardService {
   // Process query and generate dashboard using direct LLM calls (two-stage workflow)
   async generateDashboard(query, conversationHistory = []) {
     try {
-      console.log('Starting dashboard generation with query:', query);
-      console.log('Data loaded:', !!this.data && Object.keys(this.data).length > 0);
+      console.log('Calling backend API for dashboard generation...');
 
-      // Stage 1: Filter Extraction
-      console.log('Stage 1: Extracting filters from query...');
+      const response = await fetch('/api/dashboard/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: query,
+          conversation_history: conversationHistory
+        })
+      });
 
-      // Get columns info from loaded data
-      const columnsInfo = this.getColumnsInfo();
-      const relationshipInfo = this.getRelationshipInfo();
-
-      // Load filter extraction prompt
-      const filterPrompt = await this.loadPrompt('filter_extraction_prompt');
-
-      // Prepare intent extraction payload
-      const intentPayload = {
-        generation_model: "gpt-4o",
-        max_tokens: 500,
-        temperature: 0.0,
-        top_p: 0.01,
-        system_prompt: filterPrompt
-          .replace('{columns_info}', columnsInfo)
-          .replace('{relationship_info}', relationshipInfo),
-        custom_prompt: [{ role: 'user', content: query }],
-        model_provider_name: "openai"
-      };
-
-      const intentResult = await callLLM(intentPayload);
-      console.log('Intent extraction result:', intentResult);
-
-      if (!intentResult) {
-        throw new Error('Intent extraction failed: no result');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Parse intentResult if it's still a string (handle markdown)
-      let parsedIntentResult = intentResult;
-      if (typeof intentResult === 'string') {
-        let responseText = intentResult;
-        if (responseText.includes('```json')) {
-          responseText = responseText.split('```json')[1].split('```')[0].trim();
-        } else if (responseText.includes('```')) {
-          responseText = responseText.split('```')[1].split('```')[0].trim();
-        }
-        try {
-          parsedIntentResult = JSON.parse(responseText);
-        } catch (e) {
-          console.error('Failed to parse intent result:', e);
-          parsedIntentResult = { filters: {}, intent: 'overview' };
-        }
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to generate dashboard');
       }
 
-      const filters = parsedIntentResult.filters || {};
-      const intent = parsedIntentResult.intent || 'overview';
-
-      // Stage 2: Apply filters to data
-      console.log('Stage 2: Applying filters to data...');
-      let filteredData = this.applyFiltersToData(filters);
-      console.log(`Filtered data: ${filteredData.length} records`);
-
-      // Stage 3: Generate chart configurations
-      console.log('Stage 3: Generating chart configurations...');
-
-      // Create data sample for chart generation
-      const sampleSize = Math.min(10, filteredData.length);
-      const dataSample = {
-        shape: [filteredData.length, Object.keys(filteredData[0] || {}).length],
-        columns: Object.keys(filteredData[0] || {}),
-        sample_rows: filteredData.slice(0, sampleSize)
-      };
-
-      // Load chart generation prompt
-      const chartPrompt = await this.loadPrompt('chart_generation_prompt');
-
-      const chartPayload = {
-        generation_model: "gpt-4o",
-        max_tokens: 1500,
-        temperature: 0.2,
-        top_p: 0.01,
-        system_prompt: chartPrompt
-          .replace('{data_sample}', JSON.stringify(dataSample, null, 2))
-          .replace('{all_columns}', Object.keys(filteredData[0] || {}).join(', ')),
-        custom_prompt: [{ role: 'user', content: query }],
-        model_provider_name: "openai"
-      };
-
-      const chartResult = await callLLM(chartPayload);
-      console.log('Chart generation result:', chartResult);
-
-      if (!chartResult) {
-        throw new Error('Chart generation failed: no result');
-      }
-
-      // Parse chartResult if it's still a string (handle markdown)
-      let parsedChartResult = chartResult;
-      if (typeof chartResult === 'string') {
-        let responseText = chartResult;
-        if (responseText.includes('```json')) {
-          responseText = responseText.split('```json')[1].split('```')[0].trim();
-        } else if (responseText.includes('```')) {
-          responseText = responseText.split('```')[1].split('```')[0].trim();
-        }
-        try {
-          parsedChartResult = JSON.parse(responseText);
-        } catch (e) {
-          console.error('Failed to parse chart result:', e);
-          parsedChartResult = { charts: [], tables: [] };
-        }
-      }
-
-      // Transform to match frontend expectations
-      const transformedData = {
-        filters: filters,
+      // Transform backend response to match frontend expectations
+      return {
+        filters: result.filters?.filters || {},
         metrics: {
-          total_records: filteredData.length,
-          filtered_records: filteredData.length,
-          unique_materials: this.calculateUniqueCount(filteredData, 'Material'),
-          unique_plants: this.calculateUniqueCount(filteredData, 'Plant')
+          total_records: result.total_records || 0,
+          filtered_records: result.filtered_records || 0,
+          unique_materials: result.metrics?.unique_materials || 0,
+          unique_plants: result.metrics?.unique_plants || 0,
+          unique_upcs: result.metrics?.unique_upcs || 0,
+          total_quantity: result.metrics?.total_quantity || 0
         },
-        charts: parsedChartResult.charts || [],
-        tables: parsedChartResult.tables ? parsedChartResult.tables.map(table => ({ ...table, type: 'table' })) : [],
+        charts: result.charts || [],
+        tables: result.tables || [],
         data_sample: {
-          sample_rows: filteredData.slice(0, 50),
-          shape: [filteredData.length, Object.keys(filteredData[0] || {}).length]
+          sample_rows: result.data_sample || [],
+          shape: [result.filtered_records || 0, result.data_sample?.[0] ? Object.keys(result.data_sample[0]).length : 0],
+          columns: result.data_sample?.[0] ? Object.keys(result.data_sample[0]) : []
         },
-        follow_up_questions: [], // Could implement later
-        summary: `Generated dashboard for ${intent} with ${filteredData.length} records`,
-        processing_time: Date.now()
+        filtered_data: result.filtered_data || [],
+        follow_up_questions: result.follow_up_questions || [],
+        summary: result.summary || `Generated dashboard for query: ${query}`,
+        processing_time: result.processing_time || Date.now(),
+        title: result.title || '🔍 Analysis Results'
       };
-
-      return transformedData;
 
     } catch (error) {
       console.error('Error generating dashboard:', error);
@@ -368,75 +286,6 @@ export async function callLLM(payload) {
 
   return result;
 }
-/* ---------------------------
-2) Prompts (system prompts copied from sap_dashboard_agent.py)
-Use these as `system_prompt` in the payload. (Intent/filter & Chart generation)
-Source: prompt text from repo. :contentReference[oaicite:2]{index=2}
---------------------------- */
-
-/* Example payload assembly (client-side) before calling callLLM:
-const payload = {
-  generation_model: "gpt-4o",
-  max_tokens: 1500,
-  temperature: 0.2,
-  top_p: 0.01,
-  system_prompt: CHART_SYSTEM_PROMPT.replace('{data_sample}', JSON.stringify(dataSample, null, 2)),
-  custom_prompt: [{role: 'user', content: enhancedQuery}],
-  model_provider_name: "openai"
-};
-*/
-/* ---------------------------
-3) Chart generation using Plotly.js
-- Inputs:
-  * chartConfig: { type, title, x_column, y_column, group_by/color_by, agg_function, limit, ... }
-  * data: array of objects [{col1: val, col2: val, ...}, ...]
-  * targetId: DOM id where to render the chart (div)
-- Mirrors Python _render_dynamic_chart behaviour: counts, top-N, grouped/stacked, tables.
-- Requires: Plotly.js (import Plotly from 'plotly.js-dist-min' or include CDN)
---------------------------- */
-
-// Chart generation system prompt
-export const CHART_SYSTEM_PROMPT = `
-You are a data visualization expert. Based on the user's query and the filtered data sample, suggest appropriate charts and tables.
-
-Data Sample:
-{data_sample}
-
-Return JSON with:
-- charts: list of chart configurations, each with:
-  * type: "bar", "pie", "line", "scatter", "table", "grouped_bar", "stacked_bar"
-  * title: chart title
-  * x_column: column for x-axis (for bar, line, scatter)
-  * y_column: column for y-axis (for bar, line, scatter) or "count" for count aggregation
-  * group_by / color_by: column to group by (optional)
-  * agg_function: "count", "sum", "mean", "max", "min"
-  * limit: number of top items to show (optional, default 10)
-- tables: list of table configurations with:
-  * columns: list of column names to display
-  * title: table title
-  * limit: number of rows (optional, default 50)
-`;
-
-/* Example payload assembly (client-side) before calling callLLM:
-const payload = {
-  generation_model: "gpt-4o",
-  max_tokens: 1500,
-  temperature: 0.2,
-  top_p: 0.01,
-  system_prompt: CHART_SYSTEM_PROMPT.replace('{data_sample}', JSON.stringify(dataSample, null, 2)),
-  custom_prompt: [{role: 'user', content: enhancedQuery}],
-  model_provider_name: "openai"
-};
-*/
-/* ---------------------------
-3) Chart generation using Plotly.js
-- Inputs:
-  * chartConfig: { type, title, x_column, y_column, group_by/color_by, agg_function, limit, ... }
-  * data: array of objects [{col1: val, col2: val, ...}, ...]
-  * targetId: DOM id where to render the chart (div)
-- Mirrors Python _render_dynamic_chart behaviour: counts, top-N, grouped/stacked, tables.
-- Requires: Plotly.js (import Plotly from 'plotly.js-dist-min' or include CDN)
---------------------------- */
 
 /** helper: aggregate count or aggregate by function */
 function aggregateCount(data, key, limit = 10) {

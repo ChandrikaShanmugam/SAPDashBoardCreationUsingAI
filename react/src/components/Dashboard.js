@@ -2,7 +2,7 @@ import React from 'react';
 import Chart from './Chart';
 import './Dashboard.css';
 
-function Dashboard({ dashboardData, loading, error }) {
+function Dashboard({ dashboardData, loading, error, onFollowUpClick }) {
   if (loading) {
     return (
       <div className="dashboard loading">
@@ -62,15 +62,15 @@ function Dashboard({ dashboardData, loading, error }) {
     );
   }
 
-  const { filters, charts, tables, metrics, data_sample } = dashboardData;
+  const { filters, charts, tables, metrics, data_sample, filtered_data, title } = dashboardData;
 
   return (
     <div className="dashboard">
       <header className="dashboard-header">
-        <h1>🔍 Analysis Results</h1>
+        <h1>{title || '🔍 Analysis Results'}</h1>
         {filters && Object.keys(filters).length > 0 && (
           <div className="filters-summary">
-            <h3>Applied Filters:</h3>
+            <h3>Applied Filters :</h3>
             <div className="filter-tags">
               {Object.entries(filters).map(([key, value]) => (
                 <span key={key} className="filter-tag">
@@ -97,20 +97,24 @@ function Dashboard({ dashboardData, loading, error }) {
             <p className="metric-value">{metrics.unique_plants?.toLocaleString() || 0}</p>
           </div>
           <div className="metric-card">
-            <h3>Data Tables</h3>
-            <p className="metric-value">{data_sample?.shape ? data_sample.shape[1] : 0}</p>
-            <small>columns</small>
+            <h3>Unique UPCs</h3>
+            <p className="metric-value">{metrics.unique_upcs?.toLocaleString() || 0}</p>
+          </div>
+          <div className="metric-card">
+            <h3>Total Quantity</h3>
+            <p className="metric-value">{metrics.total_quantity?.toLocaleString() || 0}</p>
           </div>
         </div>
       )}
 
       {charts && charts.length > 0 && (
         <section className="charts-section">
+          <hr />
           <h2>📊 Visualizations</h2>
           <div className="charts-grid">
             {charts.map((chart, index) => (
               <div key={index} className="chart-wrapper">
-                <Chart config={chart} data={data_sample?.sample_rows || []} />
+                <Chart config={chart} data={filtered_data || []} />
               </div>
             ))}
           </div>
@@ -119,47 +123,71 @@ function Dashboard({ dashboardData, loading, error }) {
 
       {tables && tables.length > 0 && (
         <section className="tables-section">
+          <hr />
           <h2>📋 Data Tables</h2>
           {tables.map((table, index) => (
-            <Chart key={index} config={table} data={data_sample?.sample_rows || []} />
+            <Chart key={index} config={table} data={filtered_data || []} />
           ))}
         </section>
       )}
 
-      {data_sample && (
-        <section className="data-sample-section">
-          <h2>📄 Data Preview</h2>
-          <div className="data-info">
-            <p><strong>Dataset Shape:</strong> {data_sample.shape ? `${data_sample.shape[0]} rows × ${data_sample.shape[1]} columns` : 'Unknown'}</p>
-            <p><strong>Available Columns:</strong> {data_sample.columns ? data_sample.columns.join(', ') : 'Unknown'}</p>
-            <div className="sample-rows">
-              <h4>Sample Data:</h4>
-              <div className="sample-table">
-                <table>
-                  <thead>
-                    <tr>
-                      {data_sample.columns?.slice(0, 5).map(col => (
-                        <th key={col}>{col}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data_sample.sample_rows?.slice(0, 3).map((row, idx) => (
-                      <tr key={idx}>
-                        {data_sample.columns?.slice(0, 5).map(col => (
-                          <td key={col}>{String(row[col] || '').substring(0, 20)}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+      {/* Add empty space between sections */}
+      <div style={{ marginBottom: '40px' }}></div>
+
+      {/* Download Filtered Data Section */}
+      {filtered_data && filtered_data.length > 0 && (
+        <section className="download-section">
+          <hr />
+          <div className="download-container">
+            <button 
+              className="download-btn"
+              onClick={() => downloadFilteredData(filtered_data)}
+            >
+              📥 Download Filtered Data (CSV)
+            </button>
+            <p className="download-info">
+              Download {filtered_data.length.toLocaleString()} filtered records as CSV file
+            </p>
           </div>
         </section>
       )}
+
     </div>
   );
+}
+
+// Helper function to convert data to CSV and download
+function downloadFilteredData(data) {
+  if (!data || data.length === 0) return;
+
+  // Get all unique keys from the data
+  const headers = Array.from(new Set(data.flatMap(row => Object.keys(row))));
+  
+  // Create CSV content
+  const csvContent = [
+    headers.join(','), // Header row
+    ...data.map(row => 
+      headers.map(header => {
+        const value = row[header] || '';
+        // Escape quotes and wrap in quotes if contains comma, quote, or newline
+        if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      }).join(',')
+    )
+  ].join('\n');
+
+  // Create and trigger download
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', 'filtered_data.csv');
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 export default Dashboard;

@@ -189,68 +189,10 @@ class IntentClassifier {
     logger.info('Initializing IntentClassifier with PepGenX API');
     this.data = data;
 
-    // Set prompt templates directly (since loadPromptTemplate may fail)
-    this.intentSystemPrompt = this.intentPromptTemplate; // Will be set below
-    this.chartSystemPrompt = this.chartPromptTemplate; // Will be set below
+    // Load prompt templates from files
+    this.intentPromptTemplate = this.loadPromptTemplate('filter_extraction');
+    this.chartPromptTemplate = this.loadPromptTemplate('chart_generation');
 
-    this.intentPromptTemplate = `You are a SAP data analyst. Classify the user's query and determine what dashboard to create.
-
-Available Data Sources and Their Columns:
-{columns_info}
-
-Return JSON with:
-- intent: "authorized_to_sell", "exceptions", "plant_analysis", "material_analysis", or "overview"
-- data_sources: list of required data sources ["auth_yes", "auth_no", "so_exceptions"]
-- filters: object with EXACT column names as keys and filter values. Examples:
-  * {{"Plant": "1007"}} - for specific plant
-  * {{"Material": "000000000300005846"}} - for specific material
-  * {{"Plant(Location)": "1007"}} - use EXACT column name from schema
-- show_material_details: true/false - whether to show detailed material information
-
-IMPORTANT: Use EXACT column names from the schema above when creating filters.
-
-Example queries:
-- "Show me plant 1007 authorized data" → {{"intent": "plant_analysis", "filters": {{"Plant(Location)": "1007"}}}}
-- "Give me plant 1007 authorized data and material details" → {{"intent": "plant_analysis", "filters": {{"Plant(Location)": "1007"}}, "show_material_details": true}}
-- "What are the sales exceptions?" → {{"intent": "exceptions", "filters": {{}}}}
-
-{query}`;
-
-    this.chartPromptTemplate = `You are a data visualization expert. Based on the user's query and the filtered data sample, suggest appropriate charts and tables.
-
-Data Sample:
-{data_sample}
-
-Return JSON with:
-- charts: list of chart configurations, each with:
-  * type: "bar", "pie", "line", "scatter", "table"
-  * title: chart title
-  * x_column: column for x-axis (for bar, line, scatter)
-  * y_column: column for y-axis (for bar, line, scatter) or "count" for count aggregation
-  * group_by: column to group by (optional)
-  * agg_function: "count", "sum", "mean", "max", "min" (for aggregations)
-  * limit: number of top items to show (optional, default 10)
-- tables: list of table configurations with:
-  * columns: list of column names to display
-  * title: table title
-  * limit: number of rows (optional, default 50)
-
-Example:
-{{
-  "charts": [
-    {{"type": "bar", "title": "Material Count by Plant", "x_column": "Plant", "y_column": "count", "agg_function": "count", "limit": 10}},
-    {{"type": "pie", "title": "Authorization Status", "group_by": "Auth Sell Flag Description", "agg_function": "count"}}
-  ],
-  "tables": [
-    {{"columns": ["Material", "Material Descrption", "Plant", "Auth Sell Flag Description"], "title": "Material Details", "limit": 50}}
-  ]
-}}
-
-{query}`;
-
-    // Now set the system prompts
-    this.intentSystemPrompt = this.intentPromptTemplate;
-    this.chartSystemPrompt = this.chartPromptTemplate;
   }
 
   loadPromptTemplate(name) {

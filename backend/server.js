@@ -64,18 +64,44 @@ class DashboardService {
                 tables: Object.keys(this.data)
             });
 
+            // Determine title based on intent
+            const intent = filterResult.intent || 'general';
+            const titleMap = {
+                'authorized_to_sell': '📊 Authorized to Sell Analysis',
+                'exceptions': '⚠️ Sales Order Exceptions Analysis',
+                'plant_analysis': '🏭 Plant Analysis Dashboard',
+                'material_analysis': '📦 Material Analysis Dashboard',
+                'overview': '📈 SAP Data Overview',
+                'general': '🔍 Filtered Data Analysis'
+            };
+            const title = titleMap[intent] || '🔍 Data Analysis Dashboard';
+
+            // Calculate metrics from filtered data
+            const uniqueMaterials = new Set(dashboard.data.map(row => row.Material).filter(Boolean)).size;
+            const uniquePlants = new Set(dashboard.data.map(row => row.Plant).filter(Boolean)).size;
+            const uniqueUPCs = new Set(dashboard.data.map(row => row.UPC).filter(Boolean)).size;
+            const totalQuantity = dashboard.data.reduce((sum, row) => sum + (parseFloat(row['Order Quantity Sales Unit']) || 0), 0);
+
             return {
                 success: true,
                 query: query,
                 filters: filterResult,
                 total_records: this.data.sales_order.length,
                 filtered_records: dashboard.data.length,
+                metrics: {
+                    unique_materials: uniqueMaterials,
+                    unique_plants: uniquePlants,
+                    unique_upcs: uniqueUPCs,
+                    total_quantity: totalQuantity
+                },
                 charts: dashboard.charts || [],
                 tables: dashboard.tables || [],
                 data_sample: dashboard.data.slice(0, 50),
+                filtered_data: dashboard.data, // Full filtered data for charts
                 follow_up_questions: followUpQuestions,
                 processing_time: Date.now(),
-                summary: dashboard.summary
+                summary: dashboard.summary,
+                title: title
             };
 
         } catch (error) {

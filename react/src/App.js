@@ -11,7 +11,7 @@ function App() {
   const [error, setError] = useState(null);
   const [devMode, setDevMode] = useState(false);
   const [conversationHistory, setConversationHistory] = useState([]);
-  const [followUpQuestions] = useState([
+  const [followUpQuestions, setFollowUpQuestions] = useState([
     "Show me authorized to sell details",
     "What are the sales exceptions?",
     "Give me plant-wise analysis",
@@ -52,6 +52,11 @@ function App() {
 
       setDashboardData(response);
 
+      // Update followup questions from API response
+      if (response.follow_up_questions && response.follow_up_questions.length > 0) {
+        setFollowUpQuestions(response.follow_up_questions);
+      }
+
       // Update conversation history
       const newHistory = [...conversationHistory, {
         query: query.trim(),
@@ -68,8 +73,9 @@ function App() {
     }
   };
 
-  const handleExampleClick = (exampleQuery) => {
-    setQuery(exampleQuery);
+  const handleExampleClick = (question) => {
+    setQuery(question);
+    // Optionally auto-submit, but for now just set the query
   };
 
   const clearData = () => {
@@ -98,11 +104,13 @@ function App() {
           followUpQuestions={followUpQuestions}
           onExampleClick={handleExampleClick}
           dataLoading={dataLoading}
+          isFirstTime={conversationHistory.length === 0}
         />
         <Dashboard
           dashboardData={dashboardData}
           loading={loading}
           error={error}
+          onFollowUpClick={handleExampleClick}
         />
       </div>
     </div>
